@@ -93,6 +93,7 @@ const dnyDo = (iso) => {
 };
 const naleha = (d) => (d === null ? "klid" : d < 0 ? "po" : d <= 3 ? "hori" : d <= 10 ? "blizko" : "klid");
 const czDatum = (iso) => (iso ? new Date(iso + "T00:00:00").toLocaleDateString("cs-CZ") : "—");
+const czKdy = (iso) => { try { return new Date(iso).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" }); } catch { return iso; } };
 
 const vidiNa = (z, kdo) => {
   if (!jeChraneny(z.modul)) return true;
@@ -123,7 +124,7 @@ const zapis = (e) => (typeof e === "string" ? { t: null, s: e } : e);
 
 const prazdny = (modul, kdoDef) => ({
   id: crypto.randomUUID(),
-  modul, nazev: "", odpovedny: kdoDef || LIDE[0], termin: posun(7), pred: 7, stav: "Nové", pozn: "", ukolLidi: [],
+  modul, nazev: "", odpovedny: kdoDef || LIDE[0], termin: posun(7), pred: 7, stav: "Nové", pozn: "", ukolLidi: [], komentare: [],
   ...(modul === "nabidky"
     ? { chybiPolozky: [], rozpoctar: "", profil: "", lhutaCas: "", jistotaPozadovana: false, jistotaCastka: 0, jistotaForma: FORMY_JISTOTY[0], jistotaTermin: "", jistotaSlozena: false }
     : {}),
@@ -159,7 +160,7 @@ const toApp = (r) => ({
   jistotaPozadovana: r.jistota_pozadovana, jistotaCastka: r.jistota_castka,
   jistotaForma: r.jistota_forma, jistotaTermin: r.jistota_termin, jistotaSlozena: r.jistota_slozena,
   vidi: r.vidi, splneno: r.splneno, splnenoKdy: r.splneno_kdy || [], opakovani: r.opakovani || "ne",
-  ukolLidi: r.ukol_lidi || [], splnenoKdo: r.splneno_kdo,
+  ukolLidi: r.ukol_lidi || [], splnenoKdo: r.splneno_kdo, komentare: r.komentare || [],
 });
 const toDb = (z) => ({
   id: z.id, modul: z.modul, nazev: z.nazev, odpovedny: z.odpovedny,
@@ -169,7 +170,7 @@ const toDb = (z) => ({
   jistota_forma: z.jistotaForma ?? null, jistota_termin: z.jistotaTermin || null,
   jistota_slozena: !!z.jistotaSlozena, vidi: z.vidi ?? null,
   splneno: z.splneno || null, splneno_kdy: z.splnenoKdy || [], opakovani: z.opakovani || "ne",
-  ukol_lidi: z.ukolLidi || [], splneno_kdo: z.splnenoKdo || null,
+  ukol_lidi: z.ukolLidi || [], splneno_kdo: z.splnenoKdo || null, komentare: z.komentare || [],
 });
 
 const nactiZaznamy = async () => {
@@ -357,6 +358,13 @@ function DeskaObchodu({ session }) {
     } catch (e) { alert("Změna se nepodařila: " + e.message); }
   };
 
+  const ulozKomentar = async (novy) => {
+    try {
+      const ulozeny = await ulozZaznam(novy);
+      setZaznamy((p) => p.map((x) => (x.id === ulozeny.id ? ulozeny : x)));
+    } catch (e) { alert("Komentář se nepodařilo uložit: " + e.message); }
+  };
+
   const viditelne = useMemo(() => (plny ? zaznamy : zaznamy.filter((z) => !jeChraneny(z.modul))), [zaznamy, plny]);
 
   const hlidane = useMemo(() => {
@@ -522,7 +530,7 @@ function DeskaObchodu({ session }) {
         </main>
       </div>
 
-      {edit && <Formular zaznam={edit} onUloz={uloz} onSmaz={smaz} onZavri={() => setEdit(null)} />}
+      {edit && <Formular zaznam={edit} ja={kdo} onUloz={uloz} onSmaz={smaz} onKomentar={ulozKomentar} onZavri={() => setEdit(null)} />}
       {nahled && <NahledSouboru nazev={nahled.nazev} obsah={nahled.obsah} onZavri={() => setNahled(null)} />}
       {vkladam && <VlozitZeZpravy onPridej={pridejVice} onZavri={() => setVkladam(false)} />}
     </div>
@@ -574,6 +582,7 @@ function Radek({ z, onEdit, onHotovo, onToggleOsoba }) {
           {z.opakovani && z.opakovani !== "ne" && (<span>{OPAKOVANI.find((o) => o.id === z.opakovani)?.label.toLowerCase()}</span>)}
           {z.splnenoKdy?.length > 0 && (<span>splněno {z.splnenoKdy.length}×, naposledy {czDatum(zapis(z.splnenoKdy[z.splnenoKdy.length - 1]).s)}</span>)}
           {z.splneno && <span>splněno {czDatum(z.splneno)}</span>}
+          {z.komentare?.length > 0 && <span>{z.komentare.length}× koment.</span>}
         </div>
         {z.modul === "nabidky" && z.termin && (
           <div className="podani">Podání nabídky: {czDatum(z.termin)}{z.lhutaCas ? " v " + z.lhutaCas : ""}</div>
@@ -651,9 +660,19 @@ function VlozitZeZpravy({ onPridej, onZavri }) {
     </div>
   );
 }
-function Formular({ zaznam, onUloz, onSmaz, onZavri }) {
+function Formular({ zaznam, ja, onUloz, onSmaz, onKomentar, onZavri }) {
   const [z, setZ] = useState(zaznam);
+  const [novyKom, setNovyKom] = useState("");
   const zmen = (k, v) => setZ((p) => ({ ...p, [k]: v }));
+  const pridatKomentar = () => {
+    const t = novyKom.trim();
+    if (!t) return;
+    const komentare = [...(z.komentare || []), { text: t, kdo: ja, kdy: new Date().toISOString() }];
+    const novy = { ...z, komentare };
+    setZ(novy);
+    onKomentar(novy);
+    setNovyKom("");
+  };
   const prepniVidi = (osoba) =>
     setZ((p) => { const v = p.vidi || []; return { ...p, vidi: v.includes(osoba) ? v.filter((x) => x !== osoba) : [...v, osoba] }; });
   const prepniUkolLidi = (osoba) =>
@@ -793,12 +812,28 @@ function Formular({ zaznam, onUloz, onSmaz, onZavri }) {
         {jeChraneny(z.modul) && (
           <p className="napoveda" style={{ marginBottom: 12 }}>Tento modul (Majetek / ETERN) vidí jen lidé s plným přístupem — Vít a Miloš.</p>
         )}
-        <label className="pole">
-          <span>Poznámka</span>
-          <textarea rows="3" value={z.pozn || ""} onChange={(e) => zmen("pozn", e.target.value)} />
-        </label>
+        <div className="komentareBlok">
+          <span className="komentareNadpis">Komentáře</span>
+          {(z.komentare || []).length === 0 ? (
+            <p className="napoveda" style={{ margin: "4px 0 8px" }}>Zatím žádný komentář. Co sem napíšete, se uloží hned a zůstane — i s tím, kdo a kdy to napsal.</p>
+          ) : (
+            <ul className="komentare">
+              {z.komentare.map((k, i) => (
+                <li key={i}>
+                  <div className="komMeta">{k.kdo || "?"} · {czKdy(k.kdy)}</div>
+                  <div className="komText">{k.text}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="pridatKom">
+            <textarea rows="2" value={novyKom} onChange={(e) => setNovyKom(e.target.value)} placeholder="Napište komentář…"
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); pridatKomentar(); } }} />
+            <button type="button" className="primar" onClick={pridatKomentar}>Přidat</button>
+          </div>
+        </div>
         <div className="oknoPata">
-          <span className="napoveda" style={{ margin: 0, maxWidth: "60%" }}>Záznamy se nemažou. Hotové dáte tlačítkem „Hotovo" do Splněných, kde zůstanou i s tím, kdo je splnil.</span>
+          <span className="napoveda" style={{ margin: 0, maxWidth: "55%" }}>Záznamy se nemažou. Hotové dáte tlačítkem „Hotovo" do Splněných, kde zůstanou i s tím, kdo je splnil.</span>
           <button className="primar" onClick={() => onUloz(z)}>Uložit záznam</button>
         </div>
       </div>
@@ -927,6 +962,15 @@ const CSS = `
 .napoveda{font-size:11px;color:var(--ink2);margin:7px 0 0;line-height:1.45}
 .oknoPata{display:flex;justify-content:space-between;align-items:center;margin-top:16px}
 .smazat{font:inherit;font-size:12px;background:0;border:0;color:var(--krev);cursor:pointer;text-decoration:underline}
+.komentareBlok{margin-bottom:14px;border-top:1px solid var(--linka);padding-top:12px}
+.komentareNadpis{display:block;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);margin-bottom:6px}
+.komentare{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:8px;max-height:220px;overflow:auto}
+.komentare li{background:#fff;border:1px solid var(--linka);border-left:3px solid var(--pine);padding:7px 9px}
+.komMeta{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.04em;color:var(--ink2);margin-bottom:3px}
+.komText{font-size:13px;line-height:1.45;white-space:pre-wrap}
+.pridatKom{display:flex;gap:8px;align-items:flex-end}
+.pridatKom textarea{flex:1;font:inherit;font-size:14px;padding:7px 8px;border:1px solid var(--linka);background:#fff;color:var(--ink);resize:vertical}
+.pridatKom .primar{white-space:nowrap}
 .deska :focus-visible{outline:2px solid var(--pine);outline-offset:2px}
 .prihlasovaci{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px}
 .loginKarta{background:var(--karta);border:1px solid var(--ink);max-width:360px;width:100%;padding:26px 24px}
