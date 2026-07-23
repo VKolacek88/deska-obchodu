@@ -1,0 +1,943 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Deska obchodu</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+html,body,#root{height:100%;margin:0}
+body{background:#dde2da}
+.nacitani{display:flex;align-items:center;justify-content:center;height:100%;
+  font-family:system-ui,sans-serif;color:#5a675f;font-size:14px}
+</style>
+</head>
+<body>
+<div id="root"><div class="nacitani">Načítám…</div></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo } = React;
+
+/* ---------- připojení k databázi ---------- */
+const SUPABASE_URL = "https://blkyufozilonwhlwuhyk.supabase.co";
+const SUPABASE_KEY = "sb_publishable_i2kdFkwLSVXkt9Qx50BBMw_-HU9py5F";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* ---------- konfigurace ---------- */
+const UCTY = {
+  "vit.kolacek@garden-line.eu": { jmeno: "Vít Koláček", plny: true },
+  "milos.naprstek@garden-line.eu": { jmeno: "Miloš Náprstek", plny: true },
+  "katerina.bukova@garden-line.eu": { jmeno: "Kateřina Buková", plny: false },
+  "matej.sindelar@garden-line.eu": { jmeno: "Matěj Šindelář", plny: false },
+  "olga.zelnickova@garden-line.eu": { jmeno: "Olga Zelníčková", plny: false },
+  "karel.uhlir@garden-line.eu": { jmeno: "Karel Uhlíř", plny: false },
+  "zaneta.kadlecova@garden-line.eu": { jmeno: "Žaneta Kadlecová", plny: false },
+  "pavel.leiblinger@garden-line.eu": { jmeno: "Pavel Leiblinger", plny: false },
+  "lubos.rechziegel@garden-line.eu": { jmeno: "Luboš Rechziegel", plny: false },
+};
+const LIDE = Object.values(UCTY).map((u) => u.jmeno);
+
+const MODULY = [
+  { id: "ukoly", label: "Úkoly", terminPopis: "Termín splnění" },
+  { id: "nabidky", label: "Nabídky", terminPopis: "Lhůta pro podání nabídky" },
+  { id: "projekty", label: "Vlastní projekty", terminPopis: "Termín nebo lhůta" },
+  { id: "majetek", label: "Majetek", terminPopis: "Lhůta", chraneny: true },
+  { id: "etern", label: "ETERN Group", terminPopis: "Termín", chraneny: true },
+];
+
+const jeChraneny = (modul) => !!MODULY.find((m) => m.id === modul)?.chraneny;
+
+const STAVY = ["Nové", "Probíhá", "Čeká na jiné", "Hotovo"];
+const FORMY_JISTOTY = ["Peněžní na účet", "Bankovní záruka", "Pojištění záruky"];
+
+const OPAKOVANI = [
+  { id: "ne", label: "Neopakuje se" },
+  { id: "tyden", label: "Každý týden" },
+  { id: "14dni", label: "Každé dva týdny" },
+  { id: "mesic", label: "Každý měsíc" },
+  { id: "ctvrtleti", label: "Každé čtvrtletí" },
+  { id: "rok", label: "Každý rok" },
+];
+
+/* ---------- datumové pomocné ---------- */
+const isoZ = (d) =>
+  d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+const dnesISO = () => isoZ(new Date());
+const posun = (d) => { const t = new Date(); t.setDate(t.getDate() + d); return isoZ(t); };
+
+const pridejMesice = (d, n) => {
+  const den = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + n);
+  const posledni = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(den, posledni));
+};
+const dalsiTermin = (iso, typ) => {
+  const d = new Date(iso + "T00:00:00");
+  if (typ === "tyden") d.setDate(d.getDate() + 7);
+  else if (typ === "14dni") d.setDate(d.getDate() + 14);
+  else if (typ === "mesic") pridejMesice(d, 1);
+  else if (typ === "ctvrtleti") pridejMesice(d, 3);
+  else if (typ === "rok") pridejMesice(d, 12);
+  else return iso;
+  return isoZ(d);
+};
+
+const kc = (n) => (n ? new Intl.NumberFormat("cs-CZ").format(n) + " Kč" : "—");
+const dnyDo = (iso) => {
+  if (!iso) return null;
+  return Math.round((new Date(iso + "T00:00:00") - new Date(dnesISO() + "T00:00:00")) / 86400000);
+};
+const naleha = (d) => (d === null ? "klid" : d < 0 ? "po" : d <= 3 ? "hori" : d <= 10 ? "blizko" : "klid");
+const czDatum = (iso) => (iso ? new Date(iso + "T00:00:00").toLocaleDateString("cs-CZ") : "—");
+
+const vidiNa = (z, kdo) => {
+  if (!jeChraneny(z.modul)) return true;
+  if (!z.vidi || z.vidi.length === 0) return true;
+  return z.vidi.includes(kdo);
+};
+
+const lhutyZe = (z) => {
+  if (z.stav === "Hotovo") return [];
+  const out = [];
+  if (z.termin)
+    out.push({
+      klic: z.id + ":hlavni", z, nadpis: z.nazev,
+      popis: MODULY.find((m) => m.id === z.modul)?.terminPopis || "Lhůta",
+      datum: z.termin, cas: z.modul === "nabidky" ? z.lhutaCas : null, pred: z.pred ?? 7,
+    });
+  if (z.modul === "nabidky" && z.jistotaPozadovana && z.jistotaTermin && !z.jistotaSlozena)
+    out.push({
+      klic: z.id + ":jistota", z, nadpis: z.nazev,
+      popis: "Složit jistotu " + kc(z.jistotaCastka) + (z.jistotaForma ? " · " + z.jistotaForma : ""),
+      datum: z.jistotaTermin, pred: z.pred ?? 7,
+    });
+  return out;
+};
+
+const odkazUrl = (u) => (/^https?:\/\//i.test(u) ? u : "https://" + u);
+const zapis = (e) => (typeof e === "string" ? { t: null, s: e } : e);
+
+const prazdny = (modul, kdoDef) => ({
+  id: crypto.randomUUID(),
+  modul, nazev: "", odpovedny: kdoDef || LIDE[0], termin: posun(7), pred: 7, stav: "Nové", pozn: "", ukolLidi: [],
+  ...(modul === "nabidky"
+    ? { chybiPolozky: [], rozpoctar: "", profil: "", lhutaCas: "", jistotaPozadovana: false, jistotaCastka: 0, jistotaForma: FORMY_JISTOTY[0], jistotaTermin: "", jistotaSlozena: false }
+    : {}),
+  ...(jeChraneny(modul) ? { vidi: [LIDE[0]] } : {}),
+});
+
+const normalizujModul = (v) => {
+  if (!v) return "ukoly";
+  const t = String(v).toLowerCase().trim();
+  const m = MODULY.find((x) => x.id === t || x.label.toLowerCase() === t);
+  return m ? m.id : "ukoly";
+};
+const zeZpravy = (text) => {
+  const data = JSON.parse(text);
+  const pole = Array.isArray(data) ? data : [data];
+  return pole.filter((r) => r && r.nazev).map((r) => {
+    const modul = normalizujModul(r.modul);
+    return {
+      ...prazdny(modul), ...r, modul,
+      odpovedny: LIDE.includes(r.odpovedny) ? r.odpovedny : LIDE[0],
+      stav: STAVY.includes(r.stav) ? r.stav : "Nové",
+      termin: r.termin || posun(7),
+      pred: Number(r.pred) || 7,
+    };
+  });
+};
+
+/* ---------- mapování databáze <-> aplikace ---------- */
+const toApp = (r) => ({
+  id: r.id, modul: r.modul, nazev: r.nazev, odpovedny: r.odpovedny,
+  termin: r.termin, pred: r.pred, stav: r.stav, pozn: r.pozn || "",
+  chybiPolozky: r.chybi ? String(r.chybi).split("\n").filter((s) => s.trim()) : [], rozpoctar: r.rozpoctar, profil: r.profil, lhutaCas: r.lhuta_cas,
+  jistotaPozadovana: r.jistota_pozadovana, jistotaCastka: r.jistota_castka,
+  jistotaForma: r.jistota_forma, jistotaTermin: r.jistota_termin, jistotaSlozena: r.jistota_slozena,
+  vidi: r.vidi, splneno: r.splneno, splnenoKdy: r.splneno_kdy || [], opakovani: r.opakovani || "ne",
+  ukolLidi: r.ukol_lidi || [], splnenoKdo: r.splneno_kdo,
+});
+const toDb = (z) => ({
+  id: z.id, modul: z.modul, nazev: z.nazev, odpovedny: z.odpovedny,
+  termin: z.termin || null, pred: z.pred ?? 7, stav: z.stav, pozn: z.pozn || "",
+  chybi: (z.chybiPolozky && z.chybiPolozky.length) ? z.chybiPolozky.join("\n") : null, rozpoctar: z.rozpoctar ?? null, profil: z.profil ?? null, lhuta_cas: z.lhutaCas || null,
+  jistota_pozadovana: !!z.jistotaPozadovana, jistota_castka: z.jistotaCastka || 0,
+  jistota_forma: z.jistotaForma ?? null, jistota_termin: z.jistotaTermin || null,
+  jistota_slozena: !!z.jistotaSlozena, vidi: z.vidi ?? null,
+  splneno: z.splneno || null, splneno_kdy: z.splnenoKdy || [], opakovani: z.opakovani || "ne",
+  ukol_lidi: z.ukolLidi || [], splneno_kdo: z.splnenoKdo || null,
+});
+
+const nactiZaznamy = async () => {
+  const { data, error } = await sb.from("zaznamy").select("*");
+  if (error) throw error;
+  return data.map(toApp);
+};
+const ulozZaznam = async (z) => {
+  const { data, error } = await sb.from("zaznamy").upsert(toDb(z)).select().single();
+  if (error) throw error;
+  return toApp(data);
+};
+const smazZaznam = async (id) => {
+  const { error } = await sb.from("zaznamy").delete().eq("id", id);
+  if (error) throw error;
+};
+
+/* ---------- export do kalendáře ---------- */
+const icsDatum = (iso) => iso.replaceAll("-", "");
+const icsPosun = (iso, d) => { const t = new Date(iso + "T00:00:00"); t.setDate(t.getDate() + d); return icsDatum(isoZ(t)); };
+const esc = (s) => String(s || "").replace(/[\\;,]/g, (m) => "\\" + m).replace(/\n/g, "\\n");
+
+function textIcs(lhuty) {
+  const razitko = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  const radky = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Deska obchodu//CS", "CALSCALE:GREGORIAN"];
+  lhuty.forEach((l) => {
+    radky.push(
+      "BEGIN:VEVENT", "UID:" + l.klic + "@deska-obchodu", "DTSTAMP:" + razitko,
+      "DTSTART;VALUE=DATE:" + icsDatum(l.datum), "DTEND;VALUE=DATE:" + icsPosun(l.datum, 1),
+      "SUMMARY:" + esc(l.popis + " – " + l.nadpis + (l.cas ? " v " + l.cas : "")),
+      "DESCRIPTION:" + esc("Odpovídá: " + l.z.odpovedny + (l.z.pozn ? "\n" + l.z.pozn : "")),
+      "BEGIN:VALARM", "TRIGGER:-P" + (l.pred || 7) + "D", "ACTION:DISPLAY",
+      "DESCRIPTION:" + esc(l.popis + " – " + l.nadpis), "END:VALARM", "END:VEVENT"
+    );
+  });
+  radky.push("END:VCALENDAR");
+  return radky.join("\r\n");
+}
+function ulozSoubor(obsah, nazev, mime) {
+  const url = URL.createObjectURL(new Blob([obsah], { type: mime }));
+  const a = document.createElement("a");
+  a.href = url; a.download = nazev; a.rel = "noopener";
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 2000);
+}
+const stahniIcs = (lhuty, nazev) => ulozSoubor(textIcs(lhuty), nazev, "text/calendar;charset=utf-8");
+const stahniZalohu = (zaznamy) => ulozSoubor(JSON.stringify(zaznamy, null, 2), "deska-zaloha-" + dnesISO() + ".json", "application/json");
+
+/* ---------- přihlášení ---------- */
+function Prihlaseni() {
+  const [email, setEmail] = useState("");
+  const [heslo, setHeslo] = useState("");
+  const [rezim, setRezim] = useState("in");
+  const [chyba, setChyba] = useState("");
+  const [zprava, setZprava] = useState("");
+  const [ceka, setCeka] = useState(false);
+
+  const odesli = async () => {
+    setChyba(""); setZprava(""); setCeka(true);
+    try {
+      if (rezim === "in") {
+        const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password: heslo });
+        if (error) throw error;
+      } else {
+        const { data, error } = await sb.auth.signUp({ email: email.trim(), password: heslo });
+        if (error) throw error;
+        if (!data.session) setZprava("Účet je založený. Pokud vám přišel potvrzovací e-mail, potvrďte ho a přihlaste se.");
+      }
+    } catch (e) {
+      setChyba(e.message === "Invalid login credentials" ? "Špatný e-mail nebo heslo." : e.message);
+    } finally { setCeka(false); }
+  };
+
+  return (
+    <div className="deska prihlasovaci">
+      <style>{CSS}</style>
+      <div className="loginKarta">
+        <div className="eyebrow">Oddělení obchodu</div>
+        <h1>Deska</h1>
+        <p className="napoveda" style={{ marginTop: 6 }}>
+          {rezim === "in" ? "Přihlaste se ke své desce." : "Založte si přístup ke své desce."}
+        </p>
+        <label className="pole">
+          <span>E-mail</span>
+          <input type="email" value={email} autoComplete="email"
+            onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && odesli()} />
+        </label>
+        <label className="pole">
+          <span>Heslo</span>
+          <input type="password" value={heslo} autoComplete={rezim === "in" ? "current-password" : "new-password"}
+            onChange={(e) => setHeslo(e.target.value)} onKeyDown={(e) => e.key === "Enter" && odesli()} />
+        </label>
+        {chyba && <p className="napoveda" style={{ color: "var(--krev)" }}>{chyba}</p>}
+        {zprava && <p className="napoveda" style={{ color: "var(--pine)" }}>{zprava}</p>}
+        <button className="primar" style={{ width: "100%", padding: "10px", marginTop: 4 }} disabled={ceka || !email || !heslo} onClick={odesli}>
+          {ceka ? "Moment…" : rezim === "in" ? "Přihlásit se" : "Založit přístup"}
+        </button>
+        <button className="prepnoutRezim" onClick={() => { setRezim(rezim === "in" ? "up" : "in"); setChyba(""); setZprava(""); }}>
+          {rezim === "in" ? "Nemám ještě přístup — založit" : "Už mám přístup — přihlásit"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- aplikace ---------- */
+function DeskaObchodu({ session }) {
+  const ucet = UCTY[session.user.email] || { jmeno: session.user.email, plny: false };
+  const kdo = ucet.jmeno;
+  const plny = ucet.plny;
+  const modulyDostupne = plny ? MODULY : MODULY.filter((m) => !m.chraneny);
+  const [zaznamy, setZaznamy] = useState([]);
+  const [stavDat, setStavDat] = useState("nacitam");
+  const [pohled, setPohled] = useState("prehled");
+  const [jenMoje, setJenMoje] = useState(false);
+  const [skryHotove, setSkryHotove] = useState(true);
+  const [edit, setEdit] = useState(null);
+  const [vkladam, setVkladam] = useState(false);
+  const [nahled, setNahled] = useState(null);
+
+  const nacti = async () => {
+    try {
+      const d = await nactiZaznamy();
+      setZaznamy(d);
+      setStavDat("ok");
+    } catch (e) {
+      console.error(e);
+      setStavDat("chyba");
+    }
+  };
+
+  useEffect(() => {
+    nacti();
+    const kanal = sb
+      .channel("zaznamy-zmeny")
+      .on("postgres_changes", { event: "*", schema: "public", table: "zaznamy" }, () => nacti())
+      .subscribe();
+    return () => { sb.removeChannel(kanal); };
+  }, []);
+
+  const uloz = async (z) => {
+    try {
+      const ulozeny = await ulozZaznam(z);
+      setZaznamy((p) => (p.some((x) => x.id === ulozeny.id) ? p.map((x) => (x.id === ulozeny.id ? ulozeny : x)) : [...p, ulozeny]));
+      setEdit(null);
+    } catch (e) { alert("Uložení se nepodařilo: " + e.message); }
+  };
+  const smaz = async (id) => {
+    try { await smazZaznam(id); setZaznamy((p) => p.filter((x) => x.id !== id)); setEdit(null); }
+    catch (e) { alert("Smazání se nepodařilo: " + e.message); }
+  };
+  const pridejVice = async (nove) => {
+    try {
+      const ulozene = [];
+      for (const n of nove) ulozene.push(await ulozZaznam(n));
+      setZaznamy((p) => [...p, ...ulozene]);
+      setVkladam(false);
+    } catch (e) { alert("Vložení se nepodařilo: " + e.message); }
+  };
+  const prepniHotovo = async (z) => {
+    const opak = z.opakovani && z.opakovani !== "ne";
+    let novy;
+    if (opak && z.stav !== "Hotovo") {
+      let t = dalsiTermin(z.termin, z.opakovani), poj = 0;
+      while (dnyDo(t) < 0 && poj++ < 60) t = dalsiTermin(t, z.opakovani);
+      novy = { ...z, termin: t, stav: "Nové", splnenoKdy: [...(z.splnenoKdy || []), { t: z.termin, s: dnesISO(), kdo }] };
+    } else if (z.stav === "Hotovo") {
+      novy = { ...z, stav: "Probíhá", splneno: null, splnenoKdo: null };
+    } else {
+      novy = { ...z, stav: "Hotovo", splneno: dnesISO(), splnenoKdo: kdo };
+    }
+    try {
+      const ulozeny = await ulozZaznam(novy);
+      setZaznamy((p) => p.map((x) => (x.id === ulozeny.id ? ulozeny : x)));
+    } catch (e) { alert("Změna se nepodařila: " + e.message); }
+  };
+  const prepniOsobu = async (z, jmeno) => {
+    const lidi = (z.ukolLidi || []).map((u) => (u.jmeno === jmeno ? { ...u, hotovo: !u.hotovo } : u));
+    let novy = { ...z, ukolLidi: lidi };
+    if (lidi.length && lidi.every((u) => u.hotovo)) { novy.stav = "Hotovo"; novy.splneno = dnesISO(); novy.splnenoKdo = kdo; }
+    else if (novy.stav === "Hotovo") { novy.stav = "Probíhá"; novy.splneno = null; novy.splnenoKdo = null; }
+    try {
+      const ulozeny = await ulozZaznam(novy);
+      setZaznamy((p) => p.map((x) => (x.id === ulozeny.id ? ulozeny : x)));
+    } catch (e) { alert("Změna se nepodařila: " + e.message); }
+  };
+
+  const viditelne = useMemo(() => (plny ? zaznamy : zaznamy.filter((z) => !jeChraneny(z.modul))), [zaznamy, plny]);
+
+  const hlidane = useMemo(() => {
+    let l = viditelne.flatMap(lhutyZe);
+    if (jenMoje) l = l.filter((x) => x.z.odpovedny === kdo);
+    return l.map((x) => ({ ...x, d: dnyDo(x.datum) })).filter((x) => x.d <= x.pred).sort((a, b) => a.d - b.d);
+  }, [viditelne, jenMoje, kdo]);
+
+  const filtrovane = useMemo(() => {
+    let v = viditelne;
+    if (pohled !== "prehled") v = v.filter((z) => z.modul === pohled);
+    if (jenMoje) v = v.filter((z) => z.odpovedny === kdo);
+    if (skryHotove) v = v.filter((z) => z.stav !== "Hotovo");
+    return [...v].sort((a, b) => (a.termin || "9999").localeCompare(b.termin || "9999"));
+  }, [viditelne, pohled, jenMoje, kdo, skryHotove]);
+
+  const splnene = useMemo(() => {
+    let v = viditelne;
+    if (jenMoje) v = v.filter((z) => z.odpovedny === kdo);
+    const out = [];
+    v.forEach((z) => {
+      if (z.stav === "Hotovo") out.push({ klic: z.id + ":h", z, datum: z.splneno || z.termin, termin: z.termin, kdo: z.splnenoKdo });
+      (z.splnenoKdy || []).forEach((e, i) => { const w = zapis(e); out.push({ klic: z.id + ":o" + i, z, datum: w.s, termin: w.t, kdo: w.kdo }); });
+    });
+    return out.sort((a, b) => (b.datum || "").localeCompare(a.datum || ""));
+  }, [viditelne, jenMoje, kdo]);
+
+  const poDobe = hlidane.filter((x) => x.d < 0).length;
+
+  return (
+    <div className="deska">
+      <style>{CSS}</style>
+
+      <header className="hlava">
+        <div>
+          <div className="eyebrow">Oddělení obchodu</div>
+          <h1>Deska</h1>
+        </div>
+        <div className="hlavaVpravo">
+          <div className="zalohy">
+            <button className="druhotny" onClick={() => setVkladam(true)}>Vložit ze zprávy</button>
+            <button className="druhotny" onClick={() => stahniZalohu(zaznamy)}>Stáhnout zálohu</button>
+          </div>
+          <div className="kdojsem">
+            <span>Přihlášen</span>
+            <div className="kdoJmeno">{kdo}{plny && <em className="plnyOznaceni">plný přístup</em>}</div>
+          </div>
+          <button className="odhlasit" onClick={() => sb.auth.signOut()} title={session.user.email}>Odhlásit</button>
+        </div>
+      </header>
+
+      <div className="telo">
+        {stavDat === "chyba" && (
+          <p className="poplach">
+            Data se nepodařilo načíst ze serveru. Zkontrolujte připojení k internetu a načtěte stránku znovu. Nic se nepřepsalo.
+          </p>
+        )}
+        <nav className="rail">
+          <button className={pohled === "prehled" ? "railBtn on" : "railBtn"} onClick={() => setPohled("prehled")}>
+            <span className="railLabel">Hlídač lhůt</span>
+            <span className={"railPocet" + (poDobe ? " zvyrazni" : "")}>{hlidane.length}</span>
+          </button>
+          {modulyDostupne.map((m) => {
+            const n = viditelne.filter((z) => z.modul === m.id && z.stav !== "Hotovo").length;
+            return (
+              <button key={m.id} className={pohled === m.id ? "railBtn on" : "railBtn"} onClick={() => setPohled(m.id)}>
+                <span className="railLabel">{m.label}{m.chraneny && <em className="zamek">omezeno</em>}</span>
+                <span className="railPocet">{n}</span>
+              </button>
+            );
+          })}
+          <button className={pohled === "splnene" ? "railBtn on" : "railBtn"} onClick={() => setPohled("splnene")}>
+            <span className="railLabel">Splněné</span>
+            <span className="railPocet">{splnene.length}</span>
+          </button>
+        </nav>
+
+        <main className="obsah">
+          {pohled === "prehled" && (
+            <div className="panel">
+              <div className="panelHlava">
+                <h2>Hlídané lhůty</h2>
+                <div className="ovladace">
+                  <label className="prep">
+                    <input type="checkbox" checked={jenMoje} onChange={(e) => setJenMoje(e.target.checked)} /> Jen moje
+                  </label>
+                  <button className="druhotny" disabled={!hlidane.length} onClick={() => stahniIcs(hlidane, "lhuty-obchod.ics")}>
+                    Přidat vše do kalendáře
+                  </button>
+                  <button className="druhotny" disabled={!hlidane.length}
+                    onClick={() => setNahled({ nazev: "lhuty-obchod.ics", obsah: textIcs(hlidane) })}>
+                    Nestáhlo se?
+                  </button>
+                </div>
+              </div>
+              {stavDat === "nacitam" ? (
+                <p className="prazdno">Načítám…</p>
+              ) : hlidane.length === 0 ? (
+                <p className="prazdno">Žádná lhůta se zatím nepřipomíná. U každého záznamu polem „Připomínat předem" nastavíte, kolik dnů před termínem se tu má objevit.</p>
+              ) : (
+                <ul className="seznam">
+                  {hlidane.map((l) => (<LhutaRadek key={l.klic} l={l} onEdit={() => setEdit(l.z)} />))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {pohled === "splnene" && (
+            <div className="panel">
+              <div className="panelHlava">
+                <h2>Splněné</h2>
+                <label className="prep">
+                  <input type="checkbox" checked={jenMoje} onChange={(e) => setJenMoje(e.target.checked)} /> Jen moje
+                </label>
+              </div>
+              {splnene.length === 0 ? (
+                <p className="prazdno">Zatím nic odškrtnutého. Co odškrtnete tlačítkem „Hotovo" nebo „Splněno", se objeví tady.</p>
+              ) : (
+                <ul className="seznam">
+                  {splnene.map((s) => (
+                    <li className="radek" key={s.klic}>
+                      <div className="radekText">
+                        <button className="nazev" onClick={() => setEdit(s.z)}>{s.z.nazev}</button>
+                        <div className="meta">
+                          <span className="znacka">{MODULY.find((m) => m.id === s.z.modul)?.label}</span>
+                          {s.termin && <span>termín {czDatum(s.termin)}</span>}
+                          <span>splněno {czDatum(s.datum)}</span>
+                          {s.kdo && <span>splnil {s.kdo}</span>}
+                          {s.termin && s.datum > s.termin && <span className="omezeno">po termínu</span>}
+                          <span>odpovídá {s.z.odpovedny}</span>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {pohled !== "prehled" && pohled !== "splnene" && (
+            <div className="panel">
+              <div className="panelHlava">
+                <h2>{MODULY.find((m) => m.id === pohled).label}</h2>
+                <div className="ovladace">
+                  <label className="prep">
+                    <input type="checkbox" checked={jenMoje} onChange={(e) => setJenMoje(e.target.checked)} /> Jen moje
+                  </label>
+                  <label className="prep">
+                    <input type="checkbox" checked={skryHotove} onChange={(e) => setSkryHotove(e.target.checked)} /> Skrýt hotové
+                  </label>
+                  <button className="primar" onClick={() => setEdit(prazdny(pohled, kdo))}>Přidat záznam</button>
+                </div>
+              </div>
+              {filtrovane.length === 0 ? (
+                <p className="prazdno">Tady zatím nic není. Přidejte první záznam a přiřaďte k němu termín a odpovědnou osobu.</p>
+              ) : (
+                <ul className="seznam">
+                  {filtrovane.map((z) => (<Radek key={z.id} z={z} onEdit={() => setEdit(z)} onHotovo={() => prepniHotovo(z)} onToggleOsoba={(jmeno) => prepniOsobu(z, jmeno)} />))}
+                </ul>
+              )}
+            </div>
+          )}
+        </main>
+      </div>
+
+      {edit && <Formular zaznam={edit} onUloz={uloz} onSmaz={smaz} onZavri={() => setEdit(null)} />}
+      {nahled && <NahledSouboru nazev={nahled.nazev} obsah={nahled.obsah} onZavri={() => setNahled(null)} />}
+      {vkladam && <VlozitZeZpravy onPridej={pridejVice} onZavri={() => setVkladam(false)} />}
+    </div>
+  );
+}
+
+/* ---------- části ---------- */
+function Odpocet({ d, hotovo }) {
+  const n = hotovo ? "klid" : naleha(d);
+  return (
+    <div className={"lhuta n-" + n}>
+      <span className="lhutaCislo">{hotovo ? "—" : d === null ? "—" : Math.abs(d)}</span>
+      <span className="lhutaJed">{hotovo ? "hotovo" : d === null ? "bez lhůty" : d < 0 ? "dnů po" : d === 0 ? "dnes" : "dnů"}</span>
+    </div>
+  );
+}
+function LhutaRadek({ l, onEdit }) {
+  return (
+    <li className="radek">
+      <Odpocet d={l.d} />
+      <div className="radekText">
+        <button className="nazev" onClick={onEdit}>{l.nadpis}</button>
+        <div className="popisLhuty">{l.popis}</div>
+        <div className="meta">
+          <span className="znacka">{MODULY.find((m) => m.id === l.z.modul)?.label}</span>
+          <span>{l.z.odpovedny}</span>
+          <span>{czDatum(l.datum)}{l.cas ? ", " + l.cas : ""}</span>
+        </div>
+      </div>
+      <button className="odskrtnout" onClick={() => stahniIcs([l], "lhuta.ics")}>Do kalendáře</button>
+    </li>
+  );
+}
+function Radek({ z, onEdit, onHotovo, onToggleOsoba }) {
+  const d = dnyDo(z.termin);
+  const hotovo = z.stav === "Hotovo";
+  const jistotaVisi = z.modul === "nabidky" && z.jistotaPozadovana && !z.jistotaSlozena && !hotovo;
+  return (
+    <li className={"radek" + (hotovo ? " hotovo" : "")}>
+      <Odpocet d={d} hotovo={hotovo} />
+      <div className="radekText">
+        <button className="nazev" onClick={onEdit}>{z.nazev || "(bez názvu)"}</button>
+        <div className="meta">
+          <span>{z.odpovedny}</span>
+          <span>{z.stav}</span>
+          <span>{czDatum(z.termin)}</span>
+          {z.profil && (<a className="odkaz" href={odkazUrl(z.profil)} target="_blank" rel="noopener noreferrer">Profil zadavatele</a>)}
+          {z.rozpoctar && <span>počítá {z.rozpoctar}</span>}
+          {z.opakovani && z.opakovani !== "ne" && (<span>{OPAKOVANI.find((o) => o.id === z.opakovani)?.label.toLowerCase()}</span>)}
+          {z.splnenoKdy?.length > 0 && (<span>splněno {z.splnenoKdy.length}×, naposledy {czDatum(zapis(z.splnenoKdy[z.splnenoKdy.length - 1]).s)}</span>)}
+          {z.splneno && <span>splněno {czDatum(z.splneno)}</span>}
+        </div>
+        {z.modul === "nabidky" && z.termin && (
+          <div className="podani">Podání nabídky: {czDatum(z.termin)}{z.lhutaCas ? " v " + z.lhutaCas : ""}</div>
+        )}
+        {jistotaVisi && <div className="varovani">Jistota {kc(z.jistotaCastka)} · nesložena</div>}
+        {z.chybiPolozky?.length > 0 && <div className="chybi">Chybí: {z.chybiPolozky.join(" · ")}</div>}
+        {z.ukolLidi?.length > 0 && (
+          <div className="ukolLide">
+            <span className="ukolLidePocet">{z.ukolLidi.filter((u) => u.hotovo).length}/{z.ukolLidi.length} splněno</span>
+            {z.ukolLidi.map((u) => (
+              <button key={u.jmeno} className={u.hotovo ? "osobaChip hot" : "osobaChip"} onClick={() => onToggleOsoba(u.jmeno)}>
+                {u.hotovo ? "✓ " : ""}{u.jmeno}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <button className="odskrtnout" onClick={onHotovo}>
+        {z.opakovani && z.opakovani !== "ne" ? "Splněno" : hotovo ? "Vrátit" : "Hotovo"}
+      </button>
+    </li>
+  );
+}
+function NahledSouboru({ nazev, obsah, onZavri }) {
+  const [zkopirovano, setZkopirovano] = useState(false);
+  return (
+    <div className="zaves" onClick={onZavri}>
+      <div className="okno" onClick={(e) => e.stopPropagation()}>
+        <div className="oknoHlava">
+          <span className="eyebrow">{nazev}</span>
+          <button className="zavri" onClick={onZavri}>Zavřít</button>
+        </div>
+        <p className="napoveda" style={{ margin: "0 0 10px" }}>
+          Zkopírujte text, vložte do poznámkového bloku a uložte pod názvem {nazev}. Po otevření souboru si událost založí kalendář sám.
+        </p>
+        <textarea rows="10" readOnly value={obsah} onFocus={(e) => e.target.select()} style={{ width: "100%" }} />
+        <div className="oknoPata">
+          <span />
+          <button className="primar" onClick={() => { navigator.clipboard?.writeText(obsah).then(() => setZkopirovano(true), () => setZkopirovano(false)); }}>
+            {zkopirovano ? "Zkopírováno" : "Zkopírovat text"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+function VlozitZeZpravy({ onPridej, onZavri }) {
+  const [text, setText] = useState("");
+  const [chyba, setChyba] = useState("");
+  const vloz = () => {
+    try {
+      const nove = zeZpravy(text);
+      if (!nove.length) { setChyba("Nenašel jsem žádný záznam s názvem."); return; }
+      onPridej(nove);
+    } catch { setChyba("Text se nepodařilo přečíst. Vložte ho celý včetně hranatých závorek."); }
+  };
+  return (
+    <div className="zaves" onClick={onZavri}>
+      <div className="okno" onClick={(e) => e.stopPropagation()}>
+        <div className="oknoHlava">
+          <span className="eyebrow">Vložit ze zprávy</span>
+          <button className="zavri" onClick={onZavri}>Zavřít</button>
+        </div>
+        <label className="pole">
+          <span>Vložte text připravený v konverzaci</span>
+          <textarea rows="9" value={text} onChange={(e) => { setText(e.target.value); setChyba(""); }} />
+        </label>
+        {chyba && <p className="napoveda" style={{ color: "var(--krev)" }}>{chyba}</p>}
+        <p className="napoveda">Záznamy se přidají k tomu, co už v desce máte. Nic se nepřepíše.</p>
+        <div className="oknoPata">
+          <span />
+          <button className="primar" onClick={vloz}>Přidat záznamy</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+function Formular({ zaznam, onUloz, onSmaz, onZavri }) {
+  const [z, setZ] = useState(zaznam);
+  const zmen = (k, v) => setZ((p) => ({ ...p, [k]: v }));
+  const prepniVidi = (osoba) =>
+    setZ((p) => { const v = p.vidi || []; return { ...p, vidi: v.includes(osoba) ? v.filter((x) => x !== osoba) : [...v, osoba] }; });
+  const prepniUkolLidi = (osoba) =>
+    setZ((p) => {
+      const lidi = p.ukolLidi || [];
+      return { ...p, ukolLidi: lidi.some((u) => u.jmeno === osoba) ? lidi.filter((u) => u.jmeno !== osoba) : [...lidi, { jmeno: osoba, hotovo: false }] };
+    });
+  const [novaPolozka, setNovaPolozka] = useState("");
+  const pridejPolozku = () => {
+    const t = novaPolozka.trim();
+    if (!t) return;
+    setZ((p) => ({ ...p, chybiPolozky: [...(p.chybiPolozky || []), t] }));
+    setNovaPolozka("");
+  };
+  const odeberPolozku = (i) => setZ((p) => ({ ...p, chybiPolozky: (p.chybiPolozky || []).filter((_, j) => j !== i) }));
+  return (
+    <div className="zaves" onClick={onZavri}>
+      <div className="okno" onClick={(e) => e.stopPropagation()}>
+        <div className="oknoHlava">
+          <span className="eyebrow">{MODULY.find((m) => m.id === z.modul)?.label}</span>
+          <button className="zavri" onClick={onZavri}>Zavřít</button>
+        </div>
+        <label className="pole">
+          <span>Název</span>
+          <input value={z.nazev} onChange={(e) => zmen("nazev", e.target.value)} placeholder="Název zakázky nebo úkolu" autoFocus />
+        </label>
+        <div className="dvojice">
+          <label className="pole">
+            <span>Odpovídá</span>
+            <select value={z.odpovedny} onChange={(e) => zmen("odpovedny", e.target.value)}>
+              {!LIDE.includes(z.odpovedny) && z.odpovedny && <option>{z.odpovedny}</option>}
+              {LIDE.map((l) => (<option key={l}>{l}</option>))}
+            </select>
+          </label>
+          <label className="pole">
+            <span>Stav</span>
+            <select value={z.stav} onChange={(e) => zmen("stav", e.target.value)}>
+              {STAVY.map((s) => (<option key={s}>{s}</option>))}
+            </select>
+          </label>
+        </div>
+        <div className="dvojice">
+          <label className="pole">
+            <span>{MODULY.find((m) => m.id === z.modul)?.terminPopis}</span>
+            <input type="date" value={z.termin || ""} onChange={(e) => zmen("termin", e.target.value)} />
+          </label>
+          <label className="pole">
+            <span>Připomínat předem</span>
+            <select value={z.pred ?? 7} onChange={(e) => zmen("pred", Number(e.target.value))}>
+              {[1, 2, 3, 5, 7, 10, 14, 21, 30].map((n) => (<option key={n} value={n}>{n} dnů předem</option>))}
+            </select>
+          </label>
+        </div>
+        <label className="pole">
+          <span>Opakování</span>
+          <select value={z.opakovani || "ne"} onChange={(e) => zmen("opakovani", e.target.value)}>
+            {OPAKOVANI.map((o) => (<option key={o.id} value={o.id}>{o.label}</option>))}
+          </select>
+        </label>
+
+        <div className="pole">
+          <span>Úkol pro více lidí (nepovinné)</span>
+          <div className="vidiVolby">
+            {LIDE.map((l) => {
+              const on = (z.ukolLidi || []).some((u) => u.jmeno === l);
+              return (<button key={l} type="button" className={on ? "chip on" : "chip"} onClick={() => prepniUkolLidi(l)}>{l}</button>);
+            })}
+          </div>
+          <p className="napoveda">Vyberte víc lidí, když stejný úkol dělá několik kolegů. U úkolu se pak odškrtává, kdo už svou část splnil, a vy vidíte, kolik z nich je hotovo.</p>
+        </div>
+
+        {z.modul === "nabidky" && (
+          <div className="blok">
+            <label className="pole">
+              <span>Přesný čas podání (dle profilu zadavatele)</span>
+              <input type="time" value={z.lhutaCas || ""} onChange={(e) => zmen("lhutaCas", e.target.value)} />
+            </label>
+            <label className="pole">
+              <span>Profil zadavatele</span>
+              <input value={z.profil || ""} onChange={(e) => zmen("profil", e.target.value)} placeholder="Odkaz na zakázku" />
+            </label>
+            <label className="pole">
+              <span>Rozpočtář</span>
+              <input value={z.rozpoctar || ""} onChange={(e) => zmen("rozpoctar", e.target.value)} placeholder="Kdo nabídku počítá" list="lide-seznam" />
+              <datalist id="lide-seznam">{LIDE.map((l) => (<option key={l} value={l} />))}</datalist>
+            </label>
+            <label className="prep silny">
+              <input type="checkbox" checked={!!z.jistotaPozadovana} onChange={(e) => zmen("jistotaPozadovana", e.target.checked)} />
+              Zadavatel požaduje jistotu (§ 41 ZZVZ)
+            </label>
+            {z.jistotaPozadovana && (
+              <>
+                <div className="dvojice">
+                  <label className="pole">
+                    <span>Výše jistoty</span>
+                    <input type="number" min="0" step="1000" value={z.jistotaCastka || 0} onChange={(e) => zmen("jistotaCastka", Number(e.target.value))} />
+                  </label>
+                  <label className="pole">
+                    <span>Forma</span>
+                    <select value={z.jistotaForma || FORMY_JISTOTY[0]} onChange={(e) => zmen("jistotaForma", e.target.value)}>
+                      {FORMY_JISTOTY.map((f) => (<option key={f}>{f}</option>))}
+                    </select>
+                  </label>
+                </div>
+                <div className="dvojice">
+                  <label className="pole">
+                    <span>Složit do</span>
+                    <input type="date" value={z.jistotaTermin || ""} onChange={(e) => zmen("jistotaTermin", e.target.value)} />
+                  </label>
+                  <label className="pole pole-check">
+                    <span>Stav jistoty</span>
+                    <label className="prep">
+                      <input type="checkbox" checked={!!z.jistotaSlozena} onChange={(e) => zmen("jistotaSlozena", e.target.checked)} /> Složena
+                    </label>
+                  </label>
+                </div>
+              </>
+            )}
+            <div className="pole">
+              <span>Co ještě chybí</span>
+              {(z.chybiPolozky || []).length > 0 && (
+                <ul className="polozky">
+                  {z.chybiPolozky.map((p, i) => (
+                    <li key={i}><span>{p}</span><button type="button" className="odebrat" onClick={() => odeberPolozku(i)}>×</button></li>
+                  ))}
+                </ul>
+              )}
+              <div className="pridatPolozku">
+                <input value={novaPolozka} onChange={(e) => setNovaPolozka(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); pridejPolozku(); } }}
+                  placeholder="Např. ceny kamene" />
+                <button type="button" className="druhotny" onClick={pridejPolozku}>Přidat</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {jeChraneny(z.modul) && (
+          <p className="napoveda" style={{ marginBottom: 12 }}>Tento modul (Majetek / ETERN) vidí jen lidé s plným přístupem — Vít a Miloš.</p>
+        )}
+        <label className="pole">
+          <span>Poznámka</span>
+          <textarea rows="3" value={z.pozn || ""} onChange={(e) => zmen("pozn", e.target.value)} />
+        </label>
+        <div className="oknoPata">
+          <span className="napoveda" style={{ margin: 0, maxWidth: "60%" }}>Záznamy se nemažou. Hotové dáte tlačítkem „Hotovo" do Splněných, kde zůstanou i s tím, kdo je splnil.</span>
+          <button className="primar" onClick={() => onUloz(z)}>Uložit záznam</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- kořen ---------- */
+function App() {
+  const [session, setSession] = useState(undefined);
+  useEffect(() => {
+    sb.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: sub } = sb.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+  if (session === undefined) return <div className="nacitani">Načítám…</div>;
+  if (!session) return <Prihlaseni />;
+  return <DeskaObchodu session={session} />;
+}
+
+/* ---------- vzhled ---------- */
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+.deska{
+  --ink:#16201c; --ink2:#5a675f; --papir:#dde2da; --karta:#f8f9f6;
+  --linka:#c2c9bd; --pine:#20604d; --krev:#a3123a; --jantar:#a06a06;
+  font-family:'Archivo',system-ui,sans-serif; color:var(--ink);
+  background:var(--papir); min-height:100%; padding:0 0 32px;
+}
+.deska *{box-sizing:border-box}
+.deska h1{font-size:32px;font-weight:700;letter-spacing:-.02em;margin:2px 0 0}
+.deska h2{font-size:15px;font-weight:600;letter-spacing:.02em;margin:0}
+.eyebrow{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink2)}
+.hlava{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;
+  padding:20px 24px 16px;border-bottom:2px solid var(--ink);flex-wrap:wrap}
+.hlavaVpravo{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.zalohy{display:flex;gap:8px;padding-bottom:2px}
+.kdojsem{display:flex;flex-direction:column;gap:4px}
+.kdojsem span{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink2)}
+.kdojsem select{font-family:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--linka);background:var(--karta);color:var(--ink)}
+.odhlasit{font-family:inherit;font-size:13px;padding:6px 10px;border:1px solid var(--linka);background:var(--karta);color:var(--ink);cursor:pointer}
+.odhlasit:hover{border-color:var(--ink)}
+.kdoJmeno{font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px;padding:2px 0}
+.plnyOznaceni{font-family:'IBM Plex Mono',monospace;font-style:normal;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--pine);border:1px solid var(--pine);padding:1px 5px}
+.telo{display:flex;gap:24px;padding:20px 24px;align-items:flex-start;flex-wrap:wrap}
+.rail{display:flex;flex-direction:column;gap:1px;min-width:190px;flex:0 0 190px;background:var(--linka);border:1px solid var(--linka)}
+.railBtn{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;
+  padding:11px 12px;border:0;background:var(--karta);cursor:pointer;font:inherit;text-align:left;color:var(--ink)}
+.railBtn:hover{background:#eef0ea}
+.railBtn.on{background:var(--ink);color:#f2f4ef}
+.railBtn.on .railPocet{color:#f2f4ef;border-color:#6d7a71}
+.railLabel{display:flex;flex-direction:column;font-size:14px;font-weight:500}
+.zamek{font-family:'IBM Plex Mono',monospace;font-style:normal;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--krev)}
+.railBtn.on .zamek{color:#f0a3b8}
+.railPocet{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink2);border:1px solid var(--linka);padding:1px 6px}
+.railPocet.zvyrazni{background:var(--krev);color:#fff;border-color:var(--krev)}
+.poplach{flex:1 1 100%;margin:0;padding:12px 14px;background:#f7e3e8;border:1px solid var(--krev);
+  color:#6d0c26;font-size:13px;line-height:1.55}
+.obsah{flex:1 1 460px;min-width:0;display:flex;flex-direction:column;gap:16px}
+.panel{border:1px solid var(--linka);background:var(--karta)}
+.panelHlava{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:12px 14px;border-bottom:1px solid var(--linka);flex-wrap:wrap}
+.ovladace{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.prep{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2);cursor:pointer}
+.prep.silny{font-size:13px;color:var(--ink);font-weight:500;margin-bottom:10px}
+.primar{font:inherit;font-size:13px;font-weight:500;padding:7px 14px;border:0;background:var(--pine);color:#f2f4ef;cursor:pointer}
+.primar:hover{background:#174a3b}
+.primar:disabled{opacity:.5;cursor:default}
+.druhotny{font:inherit;font-size:12px;padding:6px 11px;border:1px solid var(--ink);background:0;color:var(--ink);cursor:pointer}
+.druhotny:hover{background:var(--ink);color:#f2f4ef}
+.druhotny:disabled{opacity:.35;cursor:default}
+.seznam{list-style:none;margin:0;padding:0}
+.radek{display:flex;gap:14px;align-items:flex-start;padding:12px 14px;border-bottom:1px solid #e2e6dd}
+.radek:last-child{border-bottom:0}
+.radek.hotovo{opacity:.45}
+.lhuta{flex:0 0 54px;text-align:right;font-family:'IBM Plex Mono',monospace;padding-top:1px}
+.lhutaCislo{display:block;font-size:26px;line-height:1;font-weight:500}
+.lhutaJed{display:block;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2)}
+.n-po .lhutaCislo,.n-po .lhutaJed{color:var(--krev)}
+.n-hori .lhutaCislo{color:var(--jantar)}
+.radekText{flex:1;min-width:0}
+.nazev{font:inherit;font-size:15px;font-weight:500;background:0;border:0;padding:0;cursor:pointer;color:var(--ink);text-align:left}
+.nazev:hover{text-decoration:underline}
+.popisLhuty{font-size:13px;color:var(--ink);margin-top:2px}
+.meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;font-size:12px;color:var(--ink2)}
+.znacka{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  border:1px solid var(--linka);padding:1px 5px}
+.omezeno{color:var(--krev)}
+.odkaz{color:var(--pine);text-decoration:underline;text-underline-offset:2px}
+.odkaz:hover{color:#174a3b}
+.varovani{margin-top:5px;font-size:12px;color:var(--krev);border-left:2px solid var(--krev);padding-left:7px}
+.podani{margin-top:5px;font-size:12px;color:var(--pine);font-weight:500}
+.ukolLide{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:7px}
+.ukolLidePocet{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);margin-right:2px}
+.osobaChip{font:inherit;font-size:12px;padding:3px 9px;border:1px solid var(--linka);background:#fff;color:var(--ink2);cursor:pointer;border-radius:2px}
+.osobaChip:hover{border-color:var(--ink)}
+.osobaChip.hot{background:#e3efe8;border-color:var(--pine);color:var(--pine);font-weight:500}
+.polozky{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:4px}
+.polozky li{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#fff;border:1px solid var(--linka);padding:5px 8px;font-size:13px}
+.polozky .odebrat{font:inherit;font-size:16px;line-height:1;background:0;border:0;color:var(--ink2);cursor:pointer;padding:0 2px}
+.polozky .odebrat:hover{color:var(--krev)}
+.pridatPolozku{display:flex;gap:8px}
+.pridatPolozku input{flex:1;font:inherit;font-size:14px;padding:7px 8px;border:1px solid var(--linka);background:#fff;color:var(--ink)}
+.chybi{margin-top:5px;font-size:12px;color:var(--jantar);border-left:2px solid var(--jantar);padding-left:7px}
+.odskrtnout{font:inherit;font-size:11px;padding:4px 9px;background:0;border:1px solid var(--linka);cursor:pointer;color:var(--ink2);white-space:nowrap}
+.odskrtnout:hover{border-color:var(--ink);color:var(--ink)}
+.prazdno{padding:22px 14px;color:var(--ink2);font-size:14px;margin:0;line-height:1.5}
+.zaves{position:fixed;inset:0;background:rgba(22,32,28,.42);display:flex;align-items:flex-start;
+  justify-content:center;padding:28px 16px;overflow:auto;z-index:50}
+.okno{background:var(--karta);border:1px solid var(--ink);width:100%;max-width:520px;padding:18px}
+.oknoHlava{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.zavri{font:inherit;font-size:12px;background:0;border:0;cursor:pointer;color:var(--ink2);text-decoration:underline}
+.pole{display:block;margin-bottom:12px}
+.pole>span{display:block;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink2);margin-bottom:4px}
+.pole input,.pole select,.pole textarea{width:100%;font:inherit;font-size:14px;padding:7px 8px;
+  border:1px solid var(--linka);background:#fff;color:var(--ink)}
+.pole-check .prep{padding:8px 0}
+.pole-check input{width:auto}
+.blok{border:1px solid var(--linka);border-left:3px solid var(--pine);padding:12px 12px 2px;margin-bottom:12px;background:#f2f4ef}
+.dvojice{display:flex;gap:12px}
+.dvojice .pole{flex:1}
+.vidiVolby{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--linka);background:#fff;cursor:pointer;color:var(--ink2)}
+.chip.on{background:var(--ink);color:#f2f4ef;border-color:var(--ink)}
+.napoveda{font-size:11px;color:var(--ink2);margin:7px 0 0;line-height:1.45}
+.oknoPata{display:flex;justify-content:space-between;align-items:center;margin-top:16px}
+.smazat{font:inherit;font-size:12px;background:0;border:0;color:var(--krev);cursor:pointer;text-decoration:underline}
+.deska :focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.prihlasovaci{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px}
+.loginKarta{background:var(--karta);border:1px solid var(--ink);max-width:360px;width:100%;padding:26px 24px}
+.loginKarta h1{margin:2px 0 0}
+.prepnoutRezim{display:block;width:100%;margin-top:12px;font:inherit;font-size:12px;background:0;border:0;
+  color:var(--pine);cursor:pointer;text-decoration:underline;text-align:center}
+@media (max-width:620px){.telo{flex-direction:column}.rail{flex:1 1 auto;width:100%}.dvojice{flex-direction:column;gap:0}
+  .hlava{padding:16px}.telo{padding:14px}}
+`;
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
