@@ -479,9 +479,6 @@ function DeskaObchodu({ session }) {
             <span className="railLabel">Hlídač lhůt</span>
             <span className={"railPocet" + (poDobe ? " zvyrazni" : "")}>{hlidane.length}</span>
           </button>
-          <button className={pohled === "kalendar" ? "railBtn on" : "railBtn"} onClick={() => setPohled("kalendar")}>
-            <span className="railLabel">Kalendář</span>
-          </button>
           {modulyDostupne.map((m) => {
             const n = viditelne.filter((z) => z.modul === m.id && z.stav !== "Hotovo").length;
             return (
@@ -494,6 +491,9 @@ function DeskaObchodu({ session }) {
           <button className={pohled === "splnene" ? "railBtn on" : "railBtn"} onClick={() => setPohled("splnene")}>
             <span className="railLabel">Splněné</span>
             <span className="railPocet">{splnene.length}</span>
+          </button>
+          <button className={pohled === "kalendar" ? "railBtn on" : "railBtn"} onClick={() => setPohled("kalendar")}>
+            <span className="railLabel">Kalendář</span>
           </button>
         </nav>
 
