@@ -53,6 +53,13 @@ const jeChraneny = (modul) => !!MODULY.find((m) => m.id === modul)?.chraneny;
 const STAVY = ["Nové", "Probíhá", "Čeká na jiné", "Hotovo"];
 const FORMY_JISTOTY = ["Peněžní na účet", "Bankovní záruka", "Pojištění záruky"];
 
+const PRIORITY = [
+  { id: "normalni", label: "Normální", poradi: 0 },
+  { id: "vysoka", label: "Vysoká", poradi: 1 },
+  { id: "kriticka", label: "Kritická", poradi: 2 },
+];
+const prioPoradi = (p) => PRIORITY.find((x) => x.id === p)?.poradi ?? 0;
+
 const OPAKOVANI = [
   { id: "ne", label: "Neopakuje se" },
   { id: "tyden", label: "Každý týden" },
@@ -124,7 +131,7 @@ const zapis = (e) => (typeof e === "string" ? { t: null, s: e } : e);
 
 const prazdny = (modul, kdoDef) => ({
   id: crypto.randomUUID(),
-  modul, nazev: "", odpovedny: kdoDef || LIDE[0], termin: posun(7), pred: 7, stav: "Nové", pozn: "", ukolLidi: [], komentare: [],
+  modul, nazev: "", odpovedny: kdoDef || LIDE[0], termin: posun(7), pred: 7, stav: "Nové", pozn: "", ukolLidi: [], komentare: [], priorita: "normalni",
   ...(modul === "nabidky"
     ? { chybiPolozky: [], rozpoctar: "", profil: "", lhutaCas: "", jistotaPozadovana: false, jistotaCastka: 0, jistotaForma: FORMY_JISTOTY[0], jistotaTermin: "", jistotaSlozena: false }
     : {}),
@@ -160,7 +167,7 @@ const toApp = (r) => ({
   jistotaPozadovana: r.jistota_pozadovana, jistotaCastka: r.jistota_castka,
   jistotaForma: r.jistota_forma, jistotaTermin: r.jistota_termin, jistotaSlozena: r.jistota_slozena,
   vidi: r.vidi, splneno: r.splneno, splnenoKdy: r.splneno_kdy || [], opakovani: r.opakovani || "ne",
-  ukolLidi: r.ukol_lidi || [], splnenoKdo: r.splneno_kdo, komentare: r.komentare || [],
+  ukolLidi: r.ukol_lidi || [], splnenoKdo: r.splneno_kdo, komentare: r.komentare || [], priorita: r.priorita || "normalni",
 });
 const toDb = (z) => ({
   id: z.id, modul: z.modul, nazev: z.nazev, odpovedny: z.odpovedny,
@@ -170,7 +177,7 @@ const toDb = (z) => ({
   jistota_forma: z.jistotaForma ?? null, jistota_termin: z.jistotaTermin || null,
   jistota_slozena: !!z.jistotaSlozena, vidi: z.vidi ?? null,
   splneno: z.splneno || null, splneno_kdy: z.splnenoKdy || [], opakovani: z.opakovani || "ne",
-  ukol_lidi: z.ukolLidi || [], splneno_kdo: z.splnenoKdo || null, komentare: z.komentare || [],
+  ukol_lidi: z.ukolLidi || [], splneno_kdo: z.splnenoKdo || null, komentare: z.komentare || [], priorita: z.priorita || "normalni",
 });
 
 const nactiZaznamy = async () => {
@@ -370,7 +377,7 @@ function DeskaObchodu({ session }) {
   const hlidane = useMemo(() => {
     let l = viditelne.flatMap(lhutyZe);
     if (jenMoje) l = l.filter((x) => x.z.odpovedny === kdo);
-    return l.map((x) => ({ ...x, d: dnyDo(x.datum) })).filter((x) => x.d <= x.pred).sort((a, b) => a.d - b.d);
+    return l.map((x) => ({ ...x, d: dnyDo(x.datum) })).filter((x) => x.d <= x.pred).sort((a, b) => prioPoradi(b.z.priorita) - prioPoradi(a.z.priorita) || a.d - b.d);
   }, [viditelne, jenMoje, kdo]);
 
   const filtrovane = useMemo(() => {
@@ -547,12 +554,19 @@ function Odpocet({ d, hotovo }) {
     </div>
   );
 }
+function PrioZnacka({ p }) {
+  if (!p || p === "normalni") return null;
+  const info = PRIORITY.find((x) => x.id === p);
+  return <span className={"prioBadge " + p}>{info ? info.label : p}</span>;
+}
+const prioTrida = (p) => (p && p !== "normalni" ? " prio-" + p : "");
+
 function LhutaRadek({ l, onEdit }) {
   return (
-    <li className="radek">
+    <li className={"radek" + prioTrida(l.z.priorita)}>
       <Odpocet d={l.d} />
       <div className="radekText">
-        <button className="nazev" onClick={onEdit}>{l.nadpis}</button>
+        <button className="nazev" onClick={onEdit}>{l.nadpis}</button><PrioZnacka p={l.z.priorita} />
         <div className="popisLhuty">{l.popis}</div>
         <div className="meta">
           <span className="znacka">{MODULY.find((m) => m.id === l.z.modul)?.label}</span>
@@ -569,10 +583,10 @@ function Radek({ z, onEdit, onHotovo, onToggleOsoba }) {
   const hotovo = z.stav === "Hotovo";
   const jistotaVisi = z.modul === "nabidky" && z.jistotaPozadovana && !z.jistotaSlozena && !hotovo;
   return (
-    <li className={"radek" + (hotovo ? " hotovo" : "")}>
+    <li className={"radek" + (hotovo ? " hotovo" : "") + prioTrida(z.priorita)}>
       <Odpocet d={d} hotovo={hotovo} />
       <div className="radekText">
-        <button className="nazev" onClick={onEdit}>{z.nazev || "(bez názvu)"}</button>
+        <button className="nazev" onClick={onEdit}>{z.nazev || "(bez názvu)"}</button><PrioZnacka p={z.priorita} />
         <div className="meta">
           <span>{z.odpovedny}</span>
           <span>{z.stav}</span>
@@ -714,6 +728,13 @@ function Formular({ zaznam, ja, onUloz, onSmaz, onKomentar, onZavri }) {
             </select>
           </label>
         </div>
+        <label className="pole">
+          <span>Priorita</span>
+          <select value={z.priorita || "normalni"} onChange={(e) => zmen("priorita", e.target.value)}>
+            {PRIORITY.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
+          </select>
+        </label>
+
         <div className="dvojice">
           <label className="pole">
             <span>{MODULY.find((m) => m.id === z.modul)?.terminPopis}</span>
@@ -922,6 +943,11 @@ const CSS = `
 .znacka{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
   border:1px solid var(--linka);padding:1px 5px}
 .omezeno{color:var(--krev)}
+.prioBadge{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:1px 6px;margin-left:8px;white-space:nowrap;vertical-align:middle}
+.prioBadge.vysoka{background:#f6e6c8;color:#7a5106;border:1px solid var(--jantar)}
+.prioBadge.kriticka{background:#f7dbe3;color:#7a0c2c;border:1px solid var(--krev)}
+.radek.prio-vysoka{box-shadow:inset 3px 0 0 var(--jantar)}
+.radek.prio-kriticka{box-shadow:inset 3px 0 0 var(--krev)}
 .odkaz{color:var(--pine);text-decoration:underline;text-underline-offset:2px}
 .odkaz:hover{color:#174a3b}
 .varovani{margin-top:5px;font-size:12px;color:var(--krev);border-left:2px solid var(--krev);padding-left:7px}
