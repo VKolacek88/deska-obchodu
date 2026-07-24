@@ -401,7 +401,7 @@ function DeskaObchodu({ session }) {
     if (pohled !== "prehled") v = v.filter((z) => z.modul === pohled);
     if (jenMoje) v = v.filter((z) => z.odpovedny === kdo);
     if (skryHotove) v = v.filter((z) => z.stav !== "Hotovo");
-    return [...v].sort((a, b) => (a.termin || "9999").localeCompare(b.termin || "9999"));
+    return [...v].sort((a, b) => (a.termin || "9999").localeCompare(b.termin || "9999") || prioPoradi(b.priorita) - prioPoradi(a.priorita));
   }, [viditelne, pohled, jenMoje, kdo, skryHotove]);
 
   const splnene = useMemo(() => {
