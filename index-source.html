@@ -131,7 +131,7 @@ const zapis = (e) => (typeof e === "string" ? { t: null, s: e } : e);
 
 const prazdny = (modul, kdoDef) => ({
   id: crypto.randomUUID(),
-  modul, nazev: "", odpovedny: kdoDef || LIDE[0], termin: posun(7), pred: 7, stav: "Nové", pozn: "", ukolLidi: [], komentare: [], priorita: "normalni",
+  modul, nazev: "", odpovedny: kdoDef || LIDE[0], termin: posun(7), pred: 7, stav: "Nové", pozn: "", ukolLidi: [], komentare: [], priorita: "normalni", prilohy: [],
   ...(modul === "nabidky"
     ? { chybiPolozky: [], rozpoctar: "", profil: "", lhutaCas: "", jistotaPozadovana: false, jistotaCastka: 0, jistotaForma: FORMY_JISTOTY[0], jistotaTermin: "", jistotaSlozena: false }
     : {}),
@@ -167,7 +167,7 @@ const toApp = (r) => ({
   jistotaPozadovana: r.jistota_pozadovana, jistotaCastka: r.jistota_castka,
   jistotaForma: r.jistota_forma, jistotaTermin: r.jistota_termin, jistotaSlozena: r.jistota_slozena,
   vidi: r.vidi, splneno: r.splneno, splnenoKdy: r.splneno_kdy || [], opakovani: r.opakovani || "ne",
-  ukolLidi: r.ukol_lidi || [], splnenoKdo: r.splneno_kdo, komentare: r.komentare || [], priorita: r.priorita || "normalni",
+  ukolLidi: r.ukol_lidi || [], splnenoKdo: r.splneno_kdo, komentare: r.komentare || [], priorita: r.priorita || "normalni", prilohy: r.prilohy || [],
 });
 const toDb = (z) => ({
   id: z.id, modul: z.modul, nazev: z.nazev, odpovedny: z.odpovedny,
@@ -177,7 +177,7 @@ const toDb = (z) => ({
   jistota_forma: z.jistotaForma ?? null, jistota_termin: z.jistotaTermin || null,
   jistota_slozena: !!z.jistotaSlozena, vidi: z.vidi ?? null,
   splneno: z.splneno || null, splneno_kdy: z.splnenoKdy || [], opakovani: z.opakovani || "ne",
-  ukol_lidi: z.ukolLidi || [], splneno_kdo: z.splnenoKdo || null, komentare: z.komentare || [], priorita: z.priorita || "normalni",
+  ukol_lidi: z.ukolLidi || [], splneno_kdo: z.splnenoKdo || null, komentare: z.komentare || [], priorita: z.priorita || "normalni", prilohy: z.prilohy || [],
 });
 
 const nactiZaznamy = async () => {
@@ -192,6 +192,22 @@ const ulozZaznam = async (z) => {
 };
 const smazZaznam = async (id) => {
   const { error } = await sb.from("zaznamy").delete().eq("id", id);
+  if (error) throw error;
+};
+
+const nahrajPrilohu = async (zid, file) => {
+  const cesta = zid + "/" + Date.now() + "-" + file.name.replace(/[^\w.\-]+/g, "_");
+  const { error } = await sb.storage.from("prilohy").upload(cesta, file, { upsert: false });
+  if (error) throw error;
+  return cesta;
+};
+const odkazPrilohy = async (cesta) => {
+  const { data, error } = await sb.storage.from("prilohy").createSignedUrl(cesta, 3600);
+  if (error) throw error;
+  return data.signedUrl;
+};
+const smazPrilohu = async (cesta) => {
+  const { error } = await sb.storage.from("prilohy").remove([cesta]);
   if (error) throw error;
 };
 
@@ -597,6 +613,7 @@ function Radek({ z, onEdit, onHotovo, onToggleOsoba }) {
           {z.splnenoKdy?.length > 0 && (<span>splněno {z.splnenoKdy.length}×, naposledy {czDatum(zapis(z.splnenoKdy[z.splnenoKdy.length - 1]).s)}</span>)}
           {z.splneno && <span>splněno {czDatum(z.splneno)}</span>}
           {z.komentare?.length > 0 && <span>{z.komentare.length}× koment.</span>}
+          {z.prilohy?.length > 0 && <span>{z.prilohy.length} příl.</span>}
         </div>
         {z.modul === "nabidky" && z.termin && (
           <div className="podani">Podání nabídky: {czDatum(z.termin)}{z.lhutaCas ? " v " + z.lhutaCas : ""}</div>
@@ -686,6 +703,32 @@ function Formular({ zaznam, ja, onUloz, onSmaz, onKomentar, onZavri }) {
     setZ(novy);
     onKomentar(novy);
     setNovyKom("");
+  };
+  const [nahravam, setNahravam] = useState(false);
+  const pridatPrilohu = async (file) => {
+    if (!file) return;
+    if (file.size > 26214400) { alert("Soubor je větší než 25 MB. Nahrajte menší."); return; }
+    setNahravam(true);
+    try {
+      const cesta = await nahrajPrilohu(z.id, file);
+      const prilohy = [...(z.prilohy || []), { name: file.name, path: cesta, kdo: ja, kdy: new Date().toISOString() }];
+      const novy = { ...z, prilohy };
+      setZ(novy);
+      onKomentar(novy);
+    } catch (e) { alert("Nahrání se nepodařilo: " + e.message); }
+    finally { setNahravam(false); }
+  };
+  const otevriPrilohu = async (p) => {
+    try { const url = await odkazPrilohy(p.path); window.open(url, "_blank", "noopener"); }
+    catch (e) { alert("Soubor se nepodařilo otevřít: " + e.message); }
+  };
+  const odeberPrilohu = async (p) => {
+    try {
+      await smazPrilohu(p.path);
+      const novy = { ...z, prilohy: (z.prilohy || []).filter((x) => x.path !== p.path) };
+      setZ(novy);
+      onKomentar(novy);
+    } catch (e) { alert("Odebrání se nepodařilo: " + e.message); }
   };
   const prepniVidi = (osoba) =>
     setZ((p) => { const v = p.vidi || []; return { ...p, vidi: v.includes(osoba) ? v.filter((x) => x !== osoba) : [...v, osoba] }; });
@@ -833,6 +876,27 @@ function Formular({ zaznam, ja, onUloz, onSmaz, onKomentar, onZavri }) {
         {jeChraneny(z.modul) && (
           <p className="napoveda" style={{ marginBottom: 12 }}>Tento modul (Majetek / ETERN) vidí jen lidé s plným přístupem — Vít a Miloš.</p>
         )}
+        <div className="prilohyBlok">
+          <span className="komentareNadpis">Přílohy</span>
+          {(z.prilohy || []).length > 0 && (
+            <ul className="prilohy">
+              {z.prilohy.map((p, i) => (
+                <li key={i}>
+                  <button type="button" className="prilohaOdkaz" onClick={() => otevriPrilohu(p)}>{p.name}</button>
+                  <span className="prilohaMeta">{p.kdo || "?"} · {czKdy(p.kdy)}</span>
+                  <button type="button" className="odebrat" onClick={() => odeberPrilohu(p)}>×</button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <label className="nahratBtn">
+            {nahravam ? "Nahrávám…" : "Nahrát soubor"}
+            <input type="file" style={{ display: "none" }} disabled={nahravam}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) pridatPrilohu(f); e.target.value = ""; }} />
+          </label>
+          <p className="napoveda">PDF a obrázky se otevřou rovnou, Word/Excel se stáhnou. Max 25 MB na soubor.</p>
+        </div>
+
         <div className="komentareBlok">
           <span className="komentareNadpis">Komentáře</span>
           {(z.komentare || []).length === 0 ? (
@@ -997,6 +1061,16 @@ const CSS = `
 .pridatKom{display:flex;gap:8px;align-items:flex-end}
 .pridatKom textarea{flex:1;font:inherit;font-size:14px;padding:7px 8px;border:1px solid var(--linka);background:#fff;color:var(--ink);resize:vertical}
 .pridatKom .primar{white-space:nowrap}
+.prilohyBlok{margin-bottom:14px;border-top:1px solid var(--linka);padding-top:12px}
+.prilohy{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:4px}
+.prilohy li{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--linka);padding:6px 9px}
+.prilohaOdkaz{font:inherit;font-size:13px;background:0;border:0;padding:0;color:var(--pine);text-decoration:underline;text-underline-offset:2px;cursor:pointer;text-align:left;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prilohaOdkaz:hover{color:#174a3b}
+.prilohaMeta{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink2);white-space:nowrap}
+.prilohy .odebrat{font:inherit;font-size:16px;line-height:1;background:0;border:0;color:var(--ink2);cursor:pointer;padding:0 2px}
+.prilohy .odebrat:hover{color:var(--krev)}
+.nahratBtn{display:inline-block;font:inherit;font-size:12px;padding:6px 11px;border:1px solid var(--ink);background:0;color:var(--ink);cursor:pointer}
+.nahratBtn:hover{background:var(--ink);color:#f2f4ef}
 .deska :focus-visible{outline:2px solid var(--pine);outline-offset:2px}
 .prihlasovaci{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px}
 .loginKarta{background:var(--karta);border:1px solid var(--ink);max-width:360px;width:100%;padding:26px 24px}
