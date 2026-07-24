@@ -325,6 +325,34 @@ function Prihlaseni() {
   );
 }
 
+/* ---------- oslava po splnění ---------- */
+const OSLAVY = ["Paráda, hotovo!", "Skvělá práce!", "Jsi super, díky!", "Máš to!", "Špičkově odškrtnuto!", "Boom! Splněno.", "Výborně!", "Hotovo, díky!"];
+const OSLAVA_BARVY = ["#00b050", "#009040", "#f5c518", "#7bd88f", "#0aa5a0"];
+function Oslava({ text, onKonec }) {
+  useEffect(() => {
+    const t = setTimeout(onKonec, 1700);
+    return () => clearTimeout(t);
+  }, []);
+  const kousky = Array.from({ length: 16 }, (_, i) => {
+    const uhel = (i / 16) * 2 * Math.PI + Math.random() * 0.4;
+    const dist = 55 + Math.random() * 75;
+    return { x: Math.cos(uhel) * dist, y: Math.sin(uhel) * dist - 15, barva: OSLAVA_BARVY[i % OSLAVA_BARVY.length], zpozdeni: Math.random() * 0.12, rot: Math.round(Math.random() * 360) };
+  });
+  return (
+    <div className="oslavaVrstva" aria-hidden="true">
+      <div className="oslavaKarta">
+        <div className="oslavaKonfety">
+          {kousky.map((k, i) => (
+            <span key={i} className="konfeta" style={{ "--kx": k.x + "px", "--ky": k.y + "px", "--kr": k.rot + "deg", background: k.barva, animationDelay: k.zpozdeni + "s" }} />
+          ))}
+        </div>
+        <Logo className="oslavaLogo" />
+        <div className="oslavaText">{text}</div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- aplikace ---------- */
 function DeskaObchodu({ session }) {
   const ucet = UCTY[session.user.email] || { jmeno: session.user.email, plny: false };
@@ -339,6 +367,8 @@ function DeskaObchodu({ session }) {
   const [edit, setEdit] = useState(null);
   const [rychle, setRychle] = useState(false);
   const [nahled, setNahled] = useState(null);
+  const [oslava, setOslava] = useState(null);
+  const oslav = () => setOslava({ text: OSLAVY[Math.floor(Math.random() * OSLAVY.length)], id: Date.now() });
 
   const nacti = async () => {
     try {
@@ -375,29 +405,33 @@ function DeskaObchodu({ session }) {
   const ulozRychle = (nazev) => { uloz({ ...prazdny(rychleModul, kdo), nazev }); setRychle(false); };
   const prepniHotovo = async (z) => {
     const opak = z.opakovani && z.opakovani !== "ne";
-    let novy;
+    let novy, dokonceno = false;
     if (opak && z.stav !== "Hotovo") {
       let t = dalsiTermin(z.termin, z.opakovani), poj = 0;
       while (dnyDo(t) < 0 && poj++ < 60) t = dalsiTermin(t, z.opakovani);
       novy = { ...z, termin: t, stav: "Nové", splnenoKdy: [...(z.splnenoKdy || []), { t: z.termin, s: dnesISO(), kdo }] };
+      dokonceno = true;
     } else if (z.stav === "Hotovo") {
       novy = { ...z, stav: "Probíhá", splneno: null, splnenoKdo: null };
     } else {
       novy = { ...z, stav: "Hotovo", splneno: dnesISO(), splnenoKdo: kdo };
+      dokonceno = true;
     }
     try {
       const ulozeny = await ulozZaznam(novy);
       setZaznamy((p) => p.map((x) => (x.id === ulozeny.id ? ulozeny : x)));
+      if (dokonceno) oslav();
     } catch (e) { alert("Změna se nepodařila: " + e.message); }
   };
   const prepniOsobu = async (z, jmeno) => {
     const lidi = (z.ukolLidi || []).map((u) => (u.jmeno === jmeno ? { ...u, hotovo: !u.hotovo } : u));
-    let novy = { ...z, ukolLidi: lidi };
-    if (lidi.length && lidi.every((u) => u.hotovo)) { novy.stav = "Hotovo"; novy.splneno = dnesISO(); novy.splnenoKdo = kdo; }
+    let novy = { ...z, ukolLidi: lidi }, dokonceno = false;
+    if (lidi.length && lidi.every((u) => u.hotovo)) { novy.stav = "Hotovo"; novy.splneno = dnesISO(); novy.splnenoKdo = kdo; dokonceno = true; }
     else if (novy.stav === "Hotovo") { novy.stav = "Probíhá"; novy.splneno = null; novy.splnenoKdo = null; }
     try {
       const ulozeny = await ulozZaznam(novy);
       setZaznamy((p) => p.map((x) => (x.id === ulozeny.id ? ulozeny : x)));
+      if (dokonceno) oslav();
     } catch (e) { alert("Změna se nepodařila: " + e.message); }
   };
 
@@ -584,6 +618,7 @@ function DeskaObchodu({ session }) {
       {edit && <Formular zaznam={edit} ja={kdo} onUloz={uloz} onSmaz={smaz} onKomentar={ulozKomentar} onZavri={() => setEdit(null)} />}
       {nahled && <NahledSouboru nazev={nahled.nazev} obsah={nahled.obsah} onZavri={() => setNahled(null)} />}
       {rychle && <RychleZadani modul={rychleModul} onUloz={ulozRychle} onZavri={() => setRychle(false)} />}
+      {oslava && <Oslava key={oslava.id} text={oslava.text} onKonec={() => setOslava(null)} />}
     </div>
   );
 }
@@ -1124,6 +1159,16 @@ const CSS = `
 .radekAkce{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
 .hotovoBtn{font:inherit;font-size:12px;font-weight:600;padding:6px 12px;background:var(--zelena);border:1px solid var(--zelena);border-radius:8px;cursor:pointer;color:#fff;white-space:nowrap}
 .hotovoBtn:hover{background:var(--zelena-tmava);border-color:var(--zelena-tmava)}
+.oslavaVrstva{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:60}
+.oslavaKarta{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 32px;background:#fff;border:1px solid var(--linka);border-radius:18px;box-shadow:0 12px 44px rgba(0,0,0,.18);animation:oslavaIn .3s cubic-bezier(.2,1.3,.4,1) both,oslavaOut .4s ease-in 1.3s both}
+.oslavaLogo{width:56px;height:56px;animation:oslavaSkok .65s cubic-bezier(.2,1.5,.35,1) both}
+.oslavaText{font-size:16px;font-weight:700;color:var(--zelena-tmava);white-space:nowrap}
+.oslavaKonfety{position:absolute;top:36px;left:50%;width:0;height:0}
+.konfeta{position:absolute;width:9px;height:9px;border-radius:2px;transform:translate(-50%,-50%);animation:konfeta .95s ease-out both}
+@keyframes oslavaIn{from{opacity:0;transform:scale(.7) translateY(12px)}to{opacity:1;transform:scale(1) translateY(0)}}
+@keyframes oslavaOut{to{opacity:0;transform:scale(.95) translateY(-8px)}}
+@keyframes oslavaSkok{0%{transform:scale(.4) rotate(-14deg)}60%{transform:scale(1.18) rotate(7deg)}100%{transform:scale(1) rotate(0)}}
+@keyframes konfeta{0%{opacity:1;transform:translate(-50%,-50%) rotate(0)}100%{opacity:0;transform:translate(calc(-50% + var(--kx)),calc(-50% + var(--ky))) rotate(var(--kr))}}
 .prazdno{padding:24px 16px;color:var(--ink2);font-size:14px;margin:0;line-height:1.5}
 .kalWrap{overflow-x:auto;padding:12px 14px}
 .kalMrizka{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;min-width:660px}
