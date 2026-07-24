@@ -515,7 +515,7 @@ function DeskaObchodu({ session }) {
                 <p className="prazdno">Žádná lhůta se zatím nepřipomíná. U každého záznamu polem „Připomínat předem" nastavíte, kolik dnů před termínem se tu má objevit.</p>
               ) : (
                 <ul className="seznam">
-                  {hlidane.map((l) => (<LhutaRadek key={l.klic} l={l} onEdit={() => setEdit(l.z)} onToggleOsoba={(jmeno) => prepniOsobu(l.z, jmeno)} />))}
+                  {hlidane.map((l) => (<LhutaRadek key={l.klic} l={l} onEdit={() => setEdit(l.z)} onToggleOsoba={(jmeno) => prepniOsobu(l.z, jmeno)} onHotovo={() => (l.klic.endsWith(":jistota") ? uloz({ ...l.z, jistotaSlozena: true }) : prepniHotovo(l.z))} />))}
                 </ul>
               )}
             </div>
@@ -641,7 +641,8 @@ function DetailZaznamu({ z, onToggleOsoba, modulLabel }) {
     </React.Fragment>
   );
 }
-function LhutaRadek({ l, onEdit, onToggleOsoba }) {
+function LhutaRadek({ l, onEdit, onToggleOsoba, onHotovo }) {
+  const jeJistota = l.klic.endsWith(":jistota");
   return (
     <li className={"radek" + prioTrida(l.z.priorita)}>
       <Odpocet d={l.d} />
@@ -650,7 +651,10 @@ function LhutaRadek({ l, onEdit, onToggleOsoba }) {
         <div className="popisLhuty">{l.popis} · {czDatum(l.datum)}{l.cas ? " v " + l.cas : ""}</div>
         <DetailZaznamu z={l.z} onToggleOsoba={onToggleOsoba} modulLabel={MODULY.find((m) => m.id === l.z.modul)?.label} />
       </div>
-      <button className="odskrtnout" onClick={() => stahniIcs([l], "lhuta.ics")}>Do kalendáře</button>
+      <div className="radekAkce">
+        <button className="hotovoBtn" onClick={onHotovo}>{jeJistota ? "Jistota složena" : (l.z.opakovani && l.z.opakovani !== "ne" ? "Splněno" : "Hotovo")}</button>
+        <button className="odskrtnout" onClick={() => stahniIcs([l], "lhuta.ics")}>Do kalendáře</button>
+      </div>
     </li>
   );
 }
@@ -1117,6 +1121,9 @@ const CSS = `
 .prioBadge.kriticka{background:var(--krev-svetla);color:#b91c1c}
 .odskrtnout{font:inherit;font-size:12px;font-weight:500;padding:6px 12px;background:var(--karta);border:1px solid var(--linka);border-radius:8px;cursor:pointer;color:var(--ink2);white-space:nowrap}
 .odskrtnout:hover{border-color:var(--zelena);color:var(--zelena-tmava)}
+.radekAkce{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.hotovoBtn{font:inherit;font-size:12px;font-weight:600;padding:6px 12px;background:var(--zelena);border:1px solid var(--zelena);border-radius:8px;cursor:pointer;color:#fff;white-space:nowrap}
+.hotovoBtn:hover{background:var(--zelena-tmava);border-color:var(--zelena-tmava)}
 .prazdno{padding:24px 16px;color:var(--ink2);font-size:14px;margin:0;line-height:1.5}
 .kalWrap{overflow-x:auto;padding:12px 14px}
 .kalMrizka{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;min-width:660px}
