@@ -442,7 +442,7 @@ function DeskaObchodu({ session }) {
       <style>{CSS}</style>
 
       <header className="hlava">
-        <div className="znackaHlava" onClick={() => { setPohled("prehled"); nacti(); }} title="Zpět na přehled a načíst znovu" style={{ cursor: "pointer" }}>
+        <div className="znackaHlava" onClick={() => window.location.reload()} title="Obnovit stránku" style={{ cursor: "pointer" }}>
           <Logo className="logoMark" />
           <div>
             <div className="eyebrow">Oddělení obchodu</div>
