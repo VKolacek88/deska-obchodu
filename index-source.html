@@ -337,7 +337,7 @@ function DeskaObchodu({ session }) {
   const [jenMoje, setJenMoje] = useState(false);
   const [skryHotove, setSkryHotove] = useState(true);
   const [edit, setEdit] = useState(null);
-  const [vkladam, setVkladam] = useState(false);
+  const [rychle, setRychle] = useState(false);
   const [nahled, setNahled] = useState(null);
 
   const nacti = async () => {
@@ -371,14 +371,8 @@ function DeskaObchodu({ session }) {
     try { await smazZaznam(id); setZaznamy((p) => p.filter((x) => x.id !== id)); setEdit(null); }
     catch (e) { alert("Smazání se nepodařilo: " + e.message); }
   };
-  const pridejVice = async (nove) => {
-    try {
-      const ulozene = [];
-      for (const n of nove) ulozene.push(await ulozZaznam(n));
-      setZaznamy((p) => [...p, ...ulozene]);
-      setVkladam(false);
-    } catch (e) { alert("Vložení se nepodařilo: " + e.message); }
-  };
+  const rychleModul = MODULY.some((m) => m.id === pohled) ? pohled : "ukoly";
+  const ulozRychle = (nazev) => { uloz({ ...prazdny(rychleModul, kdo), nazev }); setRychle(false); };
   const prepniHotovo = async (z) => {
     const opak = z.opakovani && z.opakovani !== "ne";
     let novy;
@@ -448,7 +442,7 @@ function DeskaObchodu({ session }) {
       <style>{CSS}</style>
 
       <header className="hlava">
-        <div className="znackaHlava">
+        <div className="znackaHlava" onClick={() => { setPohled("prehled"); nacti(); }} title="Zpět na přehled a načíst znovu" style={{ cursor: "pointer" }}>
           <Logo className="logoMark" />
           <div>
             <div className="eyebrow">Oddělení obchodu</div>
@@ -457,7 +451,7 @@ function DeskaObchodu({ session }) {
         </div>
         <div className="hlavaVpravo">
           <div className="zalohy">
-            <button className="druhotny" onClick={() => setVkladam(true)}>Vložit ze zprávy</button>
+            <button className="druhotny" onClick={() => setRychle(true)}>Rychlé zadání</button>
             <button className="druhotny" onClick={() => stahniZalohu(zaznamy)}>Stáhnout zálohu</button>
           </div>
           <div className="kdojsem">
@@ -521,7 +515,7 @@ function DeskaObchodu({ session }) {
                 <p className="prazdno">Žádná lhůta se zatím nepřipomíná. U každého záznamu polem „Připomínat předem" nastavíte, kolik dnů před termínem se tu má objevit.</p>
               ) : (
                 <ul className="seznam">
-                  {hlidane.map((l) => (<LhutaRadek key={l.klic} l={l} onEdit={() => setEdit(l.z)} />))}
+                  {hlidane.map((l) => (<LhutaRadek key={l.klic} l={l} onEdit={() => setEdit(l.z)} onToggleOsoba={(jmeno) => prepniOsobu(l.z, jmeno)} />))}
                 </ul>
               )}
             </div>
@@ -589,7 +583,7 @@ function DeskaObchodu({ session }) {
 
       {edit && <Formular zaznam={edit} ja={kdo} onUloz={uloz} onSmaz={smaz} onKomentar={ulozKomentar} onZavri={() => setEdit(null)} />}
       {nahled && <NahledSouboru nazev={nahled.nazev} obsah={nahled.obsah} onZavri={() => setNahled(null)} />}
-      {vkladam && <VlozitZeZpravy onPridej={pridejVice} onZavri={() => setVkladam(false)} />}
+      {rychle && <RychleZadani modul={rychleModul} onUloz={ulozRychle} onZavri={() => setRychle(false)} />}
     </div>
   );
 }
@@ -611,18 +605,50 @@ function PrioZnacka({ p }) {
 }
 const prioTrida = (p) => (p && p !== "normalni" ? " prio-" + p : "");
 
-function LhutaRadek({ l, onEdit }) {
+function DetailZaznamu({ z, onToggleOsoba, modulLabel }) {
+  const hotovo = z.stav === "Hotovo";
+  const jistotaVisi = z.modul === "nabidky" && z.jistotaPozadovana && !z.jistotaSlozena && !hotovo;
+  return (
+    <React.Fragment>
+      <div className="meta">
+        {modulLabel && <span className="znacka">{modulLabel}</span>}
+        <span>{z.odpovedny}</span>
+        <span>{z.stav}</span>
+        <span>{czDatum(z.termin)}</span>
+        {z.profil && (<a className="odkaz" href={odkazUrl(z.profil)} target="_blank" rel="noopener noreferrer">Profil zadavatele</a>)}
+        {z.rozpoctar && <span>počítá {z.rozpoctar}</span>}
+        {z.opakovani && z.opakovani !== "ne" && (<span>{OPAKOVANI.find((o) => o.id === z.opakovani)?.label.toLowerCase()}</span>)}
+        {z.splnenoKdy?.length > 0 && (<span>splněno {z.splnenoKdy.length}×, naposledy {czDatum(zapis(z.splnenoKdy[z.splnenoKdy.length - 1]).s)}</span>)}
+        {z.splneno && <span>splněno {czDatum(z.splneno)}</span>}
+        {z.komentare?.length > 0 && <span>{z.komentare.length}× koment.</span>}
+        {z.prilohy?.length > 0 && <span>{z.prilohy.length} příl.</span>}
+      </div>
+      {z.modul === "nabidky" && z.termin && (
+        <div className="podani">Podání nabídky: {czDatum(z.termin)}{z.lhutaCas ? " v " + z.lhutaCas : ""}</div>
+      )}
+      {jistotaVisi && <div className="varovani">Jistota {kc(z.jistotaCastka)} · nesložena</div>}
+      {z.chybiPolozky?.length > 0 && <div className="chybi">Chybí: {z.chybiPolozky.join(" · ")}</div>}
+      {z.ukolLidi?.length > 0 && (
+        <div className="ukolLide">
+          <span className="ukolLidePocet">{z.ukolLidi.filter((u) => u.hotovo).length}/{z.ukolLidi.length} splněno</span>
+          {z.ukolLidi.map((u) => (
+            <button key={u.jmeno} className={u.hotovo ? "osobaChip hot" : "osobaChip"} onClick={() => onToggleOsoba && onToggleOsoba(u.jmeno)}>
+              {u.hotovo ? "✓ " : ""}{u.jmeno}
+            </button>
+          ))}
+        </div>
+      )}
+    </React.Fragment>
+  );
+}
+function LhutaRadek({ l, onEdit, onToggleOsoba }) {
   return (
     <li className={"radek" + prioTrida(l.z.priorita)}>
       <Odpocet d={l.d} />
       <div className="radekText">
         <button className="nazev" onClick={onEdit}>{l.nadpis}</button><PrioZnacka p={l.z.priorita} />
-        <div className="popisLhuty">{l.popis}</div>
-        <div className="meta">
-          <span className="znacka">{MODULY.find((m) => m.id === l.z.modul)?.label}</span>
-          <span>{l.z.odpovedny}</span>
-          <span>{czDatum(l.datum)}{l.cas ? ", " + l.cas : ""}</span>
-        </div>
+        <div className="popisLhuty">{l.popis} · {czDatum(l.datum)}{l.cas ? " v " + l.cas : ""}</div>
+        <DetailZaznamu z={l.z} onToggleOsoba={onToggleOsoba} modulLabel={MODULY.find((m) => m.id === l.z.modul)?.label} />
       </div>
       <button className="odskrtnout" onClick={() => stahniIcs([l], "lhuta.ics")}>Do kalendáře</button>
     </li>
@@ -631,39 +657,12 @@ function LhutaRadek({ l, onEdit }) {
 function Radek({ z, onEdit, onHotovo, onToggleOsoba }) {
   const d = dnyDo(z.termin);
   const hotovo = z.stav === "Hotovo";
-  const jistotaVisi = z.modul === "nabidky" && z.jistotaPozadovana && !z.jistotaSlozena && !hotovo;
   return (
     <li className={"radek" + (hotovo ? " hotovo" : "") + prioTrida(z.priorita)}>
       <Odpocet d={d} hotovo={hotovo} />
       <div className="radekText">
         <button className="nazev" onClick={onEdit}>{z.nazev || "(bez názvu)"}</button><PrioZnacka p={z.priorita} />
-        <div className="meta">
-          <span>{z.odpovedny}</span>
-          <span>{z.stav}</span>
-          <span>{czDatum(z.termin)}</span>
-          {z.profil && (<a className="odkaz" href={odkazUrl(z.profil)} target="_blank" rel="noopener noreferrer">Profil zadavatele</a>)}
-          {z.rozpoctar && <span>počítá {z.rozpoctar}</span>}
-          {z.opakovani && z.opakovani !== "ne" && (<span>{OPAKOVANI.find((o) => o.id === z.opakovani)?.label.toLowerCase()}</span>)}
-          {z.splnenoKdy?.length > 0 && (<span>splněno {z.splnenoKdy.length}×, naposledy {czDatum(zapis(z.splnenoKdy[z.splnenoKdy.length - 1]).s)}</span>)}
-          {z.splneno && <span>splněno {czDatum(z.splneno)}</span>}
-          {z.komentare?.length > 0 && <span>{z.komentare.length}× koment.</span>}
-          {z.prilohy?.length > 0 && <span>{z.prilohy.length} příl.</span>}
-        </div>
-        {z.modul === "nabidky" && z.termin && (
-          <div className="podani">Podání nabídky: {czDatum(z.termin)}{z.lhutaCas ? " v " + z.lhutaCas : ""}</div>
-        )}
-        {jistotaVisi && <div className="varovani">Jistota {kc(z.jistotaCastka)} · nesložena</div>}
-        {z.chybiPolozky?.length > 0 && <div className="chybi">Chybí: {z.chybiPolozky.join(" · ")}</div>}
-        {z.ukolLidi?.length > 0 && (
-          <div className="ukolLide">
-            <span className="ukolLidePocet">{z.ukolLidi.filter((u) => u.hotovo).length}/{z.ukolLidi.length} splněno</span>
-            {z.ukolLidi.map((u) => (
-              <button key={u.jmeno} className={u.hotovo ? "osobaChip hot" : "osobaChip"} onClick={() => onToggleOsoba(u.jmeno)}>
-                {u.hotovo ? "✓ " : ""}{u.jmeno}
-              </button>
-            ))}
-          </div>
-        )}
+        <DetailZaznamu z={z} onToggleOsoba={onToggleOsoba} />
       </div>
       <button className="odskrtnout" onClick={onHotovo}>
         {z.opakovani && z.opakovani !== "ne" ? "Splněno" : hotovo ? "Vrátit" : "Hotovo"}
@@ -694,32 +693,31 @@ function NahledSouboru({ nazev, obsah, onZavri }) {
     </div>
   );
 }
-function VlozitZeZpravy({ onPridej, onZavri }) {
-  const [text, setText] = useState("");
-  const [chyba, setChyba] = useState("");
+function RychleZadani({ modul, onUloz, onZavri }) {
+  const [nazev, setNazev] = useState("");
+  const modulLabel = MODULY.find((m) => m.id === modul)?.label || "Úkoly";
   const vloz = () => {
-    try {
-      const nove = zeZpravy(text);
-      if (!nove.length) { setChyba("Nenašel jsem žádný záznam s názvem."); return; }
-      onPridej(nove);
-    } catch { setChyba("Text se nepodařilo přečíst. Vložte ho celý včetně hranatých závorek."); }
+    const t = nazev.trim();
+    if (!t) return;
+    onUloz(t);
   };
   return (
     <div className="zaves" onClick={onZavri}>
       <div className="okno" onClick={(e) => e.stopPropagation()}>
         <div className="oknoHlava">
-          <span className="eyebrow">Vložit ze zprávy</span>
+          <span className="eyebrow">Rychlé zadání</span>
           <button className="zavri" onClick={onZavri}>Zavřít</button>
         </div>
         <label className="pole">
-          <span>Vložte text připravený v konverzaci</span>
-          <textarea rows="9" value={text} onChange={(e) => { setText(e.target.value); setChyba(""); }} />
+          <span>Název úkolu — můžete nadiktovat mikrofonem na klávesnici telefonu</span>
+          <textarea rows="3" autoFocus value={nazev}
+            onChange={(e) => setNazev(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); vloz(); } }} />
         </label>
-        {chyba && <p className="napoveda" style={{ color: "var(--krev)" }}>{chyba}</p>}
-        <p className="napoveda">Záznamy se přidají k tomu, co už v desce máte. Nic se nepřepíše.</p>
+        <p className="napoveda">Přidá se do „{modulLabel}", odpovídá vám, termín za týden. Podrobnosti (kdo, přesný termín, priorita) doladíte kdykoli později v úpravě záznamu.</p>
         <div className="oknoPata">
           <span />
-          <button className="primar" onClick={vloz}>Přidat záznamy</button>
+          <button className="primar" onClick={vloz}>Přidat</button>
         </div>
       </div>
     </div>
