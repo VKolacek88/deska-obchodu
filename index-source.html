@@ -271,6 +271,7 @@ function Prihlaseni() {
     <div className="deska prihlasovaci">
       <style>{CSS}</style>
       <div className="loginKarta">
+        <Logo className="loginLogo" />
         <div className="eyebrow">Oddělení obchodu</div>
         <h1>Géčko</h1>
         <p className="napoveda" style={{ marginTop: 6 }}>
@@ -422,9 +423,12 @@ function DeskaObchodu({ session }) {
       <style>{CSS}</style>
 
       <header className="hlava">
-        <div>
-          <div className="eyebrow">Oddělení obchodu</div>
-          <h1>Géčko</h1>
+        <div className="znackaHlava">
+          <Logo className="logoMark" />
+          <div>
+            <div className="eyebrow">Oddělení obchodu</div>
+            <h1>Géčko</h1>
+          </div>
         </div>
         <div className="hlavaVpravo">
           <div className="zalohy">
@@ -926,6 +930,19 @@ function Formular({ zaznam, ja, onUloz, onSmaz, onKomentar, onZavri }) {
   );
 }
 
+/* ---------- logo (zástupný znak – vyměnit za skutečné logo GL Group) ---------- */
+function Logo({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 100 104" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="GL Group a.s.">
+      <path d="M50 6 L90 40 L90 98 L10 98 L10 40 Z" fill="#111827" />
+      <circle cx="50" cy="50" r="16" fill="#ffffff" />
+      <circle cx="37" cy="59" r="11" fill="#ffffff" />
+      <circle cx="63" cy="59" r="11" fill="#ffffff" />
+      <rect x="46" y="60" width="8" height="37" fill="#ffffff" />
+    </svg>
+  );
+}
+
 /* ---------- kořen ---------- */
 function App() {
   const [session, setSession] = useState(undefined);
@@ -941,144 +958,160 @@ function App() {
 
 /* ---------- vzhled ---------- */
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 .deska{
-  --ink:#16201c; --ink2:#5a675f; --papir:#dde2da; --karta:#f8f9f6;
-  --linka:#c2c9bd; --pine:#20604d; --krev:#a3123a; --jantar:#a06a06;
-  font-family:'Archivo',system-ui,sans-serif; color:var(--ink);
-  background:var(--papir); min-height:100%; padding:0 0 32px;
+  --zelena:#4a9d2f; --zelena-tmava:#357a1f; --zelena-svetla:#eaf5e3;
+  --bg:#f4f6f8; --karta:#ffffff; --ink:#111827; --ink2:#6b7280; --linka:#e5e7eb; --linka2:#f1f3f5;
+  --krev:#dc2626; --krev-svetla:#fee2e2; --jantar:#f59e0b; --jantar-tmava:#b45309; --jantar-svetla:#fef3c7;
+  font-family:'Inter',system-ui,sans-serif; color:var(--ink); background:var(--bg);
+  min-height:100%; padding:0 0 40px; -webkit-font-smoothing:antialiased;
 }
 .deska *{box-sizing:border-box}
-.deska h1{font-size:32px;font-weight:700;letter-spacing:-.02em;margin:2px 0 0}
-.deska h2{font-size:15px;font-weight:600;letter-spacing:.02em;margin:0}
-.eyebrow{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink2)}
-.hlava{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;
-  padding:20px 24px 16px;border-bottom:2px solid var(--ink);flex-wrap:wrap}
-.hlavaVpravo{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
-.zalohy{display:flex;gap:8px;padding-bottom:2px}
-.kdojsem{display:flex;flex-direction:column;gap:4px}
-.kdojsem span{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink2)}
-.kdojsem select{font-family:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--linka);background:var(--karta);color:var(--ink)}
-.odhlasit{font-family:inherit;font-size:13px;padding:6px 10px;border:1px solid var(--linka);background:var(--karta);color:var(--ink);cursor:pointer}
-.odhlasit:hover{border-color:var(--ink)}
-.kdoJmeno{font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px;padding:2px 0}
-.plnyOznaceni{font-family:'IBM Plex Mono',monospace;font-style:normal;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--pine);border:1px solid var(--pine);padding:1px 5px}
-.telo{display:flex;gap:24px;padding:20px 24px;align-items:flex-start;flex-wrap:wrap}
-.rail{display:flex;flex-direction:column;gap:1px;min-width:190px;flex:0 0 190px;background:var(--linka);border:1px solid var(--linka)}
+.deska h1{font-size:22px;font-weight:700;letter-spacing:-.01em;margin:0}
+.deska h2{font-size:15px;font-weight:600;margin:0}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--zelena)}
+
+.hlava{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 24px;
+  background:var(--karta);border-bottom:1px solid var(--linka);flex-wrap:wrap}
+.znackaHlava{display:flex;align-items:center;gap:12px}
+.logoMark{height:36px;width:auto;flex:0 0 auto}
+.hlavaVpravo{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.zalohy{display:flex;gap:8px}
+.kdojsem{display:flex;flex-direction:column;gap:2px}
+.kdojsem span{font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink2)}
+.kdoJmeno{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.plnyOznaceni{font-style:normal;font-size:10px;font-weight:600;letter-spacing:.02em;color:var(--zelena-tmava);background:var(--zelena-svetla);padding:2px 7px;border-radius:999px}
+.odhlasit{font:inherit;font-size:13px;padding:7px 12px;border:1px solid var(--linka);border-radius:8px;background:var(--karta);color:var(--ink);cursor:pointer}
+.odhlasit:hover{background:#f9fafb;border-color:#d1d5db}
+
+.telo{display:flex;gap:20px;padding:20px 24px;align-items:flex-start;flex-wrap:wrap;max-width:1120px;margin:0 auto}
+.rail{display:flex;flex-direction:column;gap:4px;min-width:200px;flex:0 0 200px}
 .railBtn{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;
-  padding:11px 12px;border:0;background:var(--karta);cursor:pointer;font:inherit;text-align:left;color:var(--ink)}
-.railBtn:hover{background:#eef0ea}
-.railBtn.on{background:var(--ink);color:#f2f4ef}
-.railBtn.on .railPocet{color:#f2f4ef;border-color:#6d7a71}
+  padding:11px 13px;border:1px solid transparent;border-radius:10px;background:0;cursor:pointer;font:inherit;text-align:left;color:var(--ink2)}
+.railBtn:hover{background:var(--karta);color:var(--ink)}
+.railBtn.on{background:var(--karta);color:var(--ink);border-color:var(--linka);box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.railBtn.on .railLabel{color:var(--ink);font-weight:600}
 .railLabel{display:flex;flex-direction:column;font-size:14px;font-weight:500}
-.zamek{font-family:'IBM Plex Mono',monospace;font-style:normal;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--krev)}
-.railBtn.on .zamek{color:#f0a3b8}
-.railPocet{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink2);border:1px solid var(--linka);padding:1px 6px}
-.railPocet.zvyrazni{background:var(--krev);color:#fff;border-color:var(--krev)}
-.poplach{flex:1 1 100%;margin:0;padding:12px 14px;background:#f7e3e8;border:1px solid var(--krev);
-  color:#6d0c26;font-size:13px;line-height:1.55}
-.obsah{flex:1 1 460px;min-width:0;display:flex;flex-direction:column;gap:16px}
-.panel{border:1px solid var(--linka);background:var(--karta)}
-.panelHlava{display:flex;justify-content:space-between;align-items:center;gap:12px;
-  padding:12px 14px;border-bottom:1px solid var(--linka);flex-wrap:wrap}
+.zamek{font-style:normal;font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--jantar-tmava)}
+.railPocet{font-size:12px;font-weight:600;color:var(--ink2);background:var(--linka2);padding:1px 8px;border-radius:999px;min-width:24px;text-align:center}
+.railBtn.on .railPocet{background:var(--zelena-svetla);color:var(--zelena-tmava)}
+.railPocet.zvyrazni{background:var(--krev);color:#fff}
+
+.poplach{flex:1 1 100%;margin:0 0 4px;padding:12px 14px;background:var(--krev-svetla);border:1px solid #fca5a5;border-radius:10px;color:#991b1b;font-size:13px;line-height:1.5}
+.obsah{flex:1 1 480px;min-width:0;display:flex;flex-direction:column;gap:16px}
+.panel{background:var(--karta);border:1px solid var(--linka);border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.04);overflow:hidden}
+.panelHlava{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--linka2);flex-wrap:wrap}
 .ovladace{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.prep{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2);cursor:pointer}
+.prep{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink2);cursor:pointer}
 .prep.silny{font-size:13px;color:var(--ink);font-weight:500;margin-bottom:10px}
-.primar{font:inherit;font-size:13px;font-weight:500;padding:7px 14px;border:0;background:var(--pine);color:#f2f4ef;cursor:pointer}
-.primar:hover{background:#174a3b}
+.primar{font:inherit;font-size:13px;font-weight:600;padding:8px 15px;border:0;border-radius:8px;background:var(--zelena);color:#fff;cursor:pointer}
+.primar:hover{background:var(--zelena-tmava)}
 .primar:disabled{opacity:.5;cursor:default}
-.druhotny{font:inherit;font-size:12px;padding:6px 11px;border:1px solid var(--ink);background:0;color:var(--ink);cursor:pointer}
-.druhotny:hover{background:var(--ink);color:#f2f4ef}
-.druhotny:disabled{opacity:.35;cursor:default}
+.druhotny{font:inherit;font-size:12px;font-weight:500;padding:7px 12px;border:1px solid var(--linka);border-radius:8px;background:var(--karta);color:var(--ink);cursor:pointer}
+.druhotny:hover{background:#f9fafb;border-color:#d1d5db}
+.druhotny:disabled{opacity:.4;cursor:default}
+
 .seznam{list-style:none;margin:0;padding:0}
-.radek{display:flex;gap:14px;align-items:flex-start;padding:12px 14px;border-bottom:1px solid #e2e6dd}
+.radek{display:flex;gap:14px;align-items:center;padding:13px 16px;border-bottom:1px solid var(--linka2)}
 .radek:last-child{border-bottom:0}
-.radek.hotovo{opacity:.45}
-.lhuta{flex:0 0 54px;text-align:right;font-family:'IBM Plex Mono',monospace;padding-top:1px}
-.lhutaCislo{display:block;font-size:26px;line-height:1;font-weight:500}
-.lhutaJed{display:block;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2)}
-.n-po .lhutaCislo,.n-po .lhutaJed{color:var(--krev)}
-.n-hori .lhutaCislo{color:var(--jantar)}
+.radek:hover{background:#fafbfc}
+.radek.hotovo{opacity:.5}
+.radek.prio-vysoka{box-shadow:inset 4px 0 0 var(--jantar)}
+.radek.prio-kriticka{box-shadow:inset 4px 0 0 var(--krev)}
+.lhuta{flex:0 0 52px;text-align:center}
+.lhutaCislo{display:block;font-size:22px;line-height:1;font-weight:700;font-variant-numeric:tabular-nums}
+.lhutaJed{display:block;font-size:10px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink2);margin-top:3px}
+.n-po .lhutaCislo{color:var(--krev)}
+.n-po .lhutaJed{color:var(--krev)}
+.n-hori .lhutaCislo{color:var(--jantar-tmava)}
 .radekText{flex:1;min-width:0}
-.nazev{font:inherit;font-size:15px;font-weight:500;background:0;border:0;padding:0;cursor:pointer;color:var(--ink);text-align:left}
-.nazev:hover{text-decoration:underline}
-.popisLhuty{font-size:13px;color:var(--ink);margin-top:2px}
-.meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;font-size:12px;color:var(--ink2)}
-.znacka{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
-  border:1px solid var(--linka);padding:1px 5px}
-.omezeno{color:var(--krev)}
-.prioBadge{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:1px 6px;margin-left:8px;white-space:nowrap;vertical-align:middle}
-.prioBadge.vysoka{background:#f6e6c8;color:#7a5106;border:1px solid var(--jantar)}
-.prioBadge.kriticka{background:#f7dbe3;color:#7a0c2c;border:1px solid var(--krev)}
-.radek.prio-vysoka{box-shadow:inset 3px 0 0 var(--jantar)}
-.radek.prio-kriticka{box-shadow:inset 3px 0 0 var(--krev)}
-.odkaz{color:var(--pine);text-decoration:underline;text-underline-offset:2px}
-.odkaz:hover{color:#174a3b}
-.varovani{margin-top:5px;font-size:12px;color:var(--krev);border-left:2px solid var(--krev);padding-left:7px}
-.podani{margin-top:5px;font-size:12px;color:var(--pine);font-weight:500}
-.ukolLide{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:7px}
-.ukolLidePocet{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);margin-right:2px}
-.osobaChip{font:inherit;font-size:12px;padding:3px 9px;border:1px solid var(--linka);background:#fff;color:var(--ink2);cursor:pointer;border-radius:2px}
-.osobaChip:hover{border-color:var(--ink)}
-.osobaChip.hot{background:#e3efe8;border-color:var(--pine);color:var(--pine);font-weight:500}
-.polozky{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:4px}
-.polozky li{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#fff;border:1px solid var(--linka);padding:5px 8px;font-size:13px}
-.polozky .odebrat{font:inherit;font-size:16px;line-height:1;background:0;border:0;color:var(--ink2);cursor:pointer;padding:0 2px}
-.polozky .odebrat:hover{color:var(--krev)}
-.pridatPolozku{display:flex;gap:8px}
-.pridatPolozku input{flex:1;font:inherit;font-size:14px;padding:7px 8px;border:1px solid var(--linka);background:#fff;color:var(--ink)}
-.chybi{margin-top:5px;font-size:12px;color:var(--jantar);border-left:2px solid var(--jantar);padding-left:7px}
-.odskrtnout{font:inherit;font-size:11px;padding:4px 9px;background:0;border:1px solid var(--linka);cursor:pointer;color:var(--ink2);white-space:nowrap}
-.odskrtnout:hover{border-color:var(--ink);color:var(--ink)}
-.prazdno{padding:22px 14px;color:var(--ink2);font-size:14px;margin:0;line-height:1.5}
-.zaves{position:fixed;inset:0;background:rgba(22,32,28,.42);display:flex;align-items:flex-start;
-  justify-content:center;padding:28px 16px;overflow:auto;z-index:50}
-.okno{background:var(--karta);border:1px solid var(--ink);width:100%;max-width:520px;padding:18px}
-.oknoHlava{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-.zavri{font:inherit;font-size:12px;background:0;border:0;cursor:pointer;color:var(--ink2);text-decoration:underline}
-.pole{display:block;margin-bottom:12px}
-.pole>span{display:block;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--ink2);margin-bottom:4px}
-.pole input,.pole select,.pole textarea{width:100%;font:inherit;font-size:14px;padding:7px 8px;
-  border:1px solid var(--linka);background:#fff;color:var(--ink)}
+.nazev{font:inherit;font-size:15px;font-weight:600;background:0;border:0;padding:0;cursor:pointer;color:var(--ink);text-align:left}
+.nazev:hover{color:var(--zelena-tmava)}
+.popisLhuty{font-size:13px;color:var(--ink2);margin-top:2px}
+.meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;font-size:12.5px;color:var(--ink2);align-items:center}
+.znacka{font-size:10px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--ink2);background:var(--linka2);padding:2px 7px;border-radius:6px}
+.omezeno{color:var(--krev);font-weight:500}
+.odkaz{color:var(--zelena-tmava);font-weight:500;text-decoration:none}
+.odkaz:hover{text-decoration:underline}
+.varovani{margin-top:6px;font-size:12.5px;color:var(--krev);font-weight:500}
+.chybi{margin-top:6px;font-size:12.5px;color:var(--jantar-tmava)}
+.podani{margin-top:6px;font-size:12.5px;color:var(--zelena-tmava);font-weight:600}
+.prioBadge{font-size:10px;font-weight:600;letter-spacing:.02em;padding:2px 9px;margin-left:8px;border-radius:999px;white-space:nowrap;vertical-align:middle}
+.prioBadge.vysoka{background:var(--jantar-svetla);color:var(--jantar-tmava)}
+.prioBadge.kriticka{background:var(--krev-svetla);color:#b91c1c}
+.odskrtnout{font:inherit;font-size:12px;font-weight:500;padding:6px 12px;background:var(--karta);border:1px solid var(--linka);border-radius:8px;cursor:pointer;color:var(--ink2);white-space:nowrap}
+.odskrtnout:hover{border-color:var(--zelena);color:var(--zelena-tmava)}
+.prazdno{padding:24px 16px;color:var(--ink2);font-size:14px;margin:0;line-height:1.5}
+
+.ukolLide{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.ukolLidePocet{font-size:11px;font-weight:600;color:var(--ink2);margin-right:2px}
+.osobaChip{font:inherit;font-size:12px;padding:3px 10px;border:1px solid var(--linka);background:var(--karta);color:var(--ink2);cursor:pointer;border-radius:999px}
+.osobaChip:hover{border-color:#d1d5db}
+.osobaChip.hot{background:var(--zelena-svetla);border-color:var(--zelena);color:var(--zelena-tmava);font-weight:600}
+
+.zaves{position:fixed;inset:0;background:rgba(17,24,39,.45);display:flex;align-items:flex-start;justify-content:center;padding:28px 16px;overflow:auto;z-index:50}
+.okno{background:var(--karta);border-radius:14px;width:100%;max-width:540px;padding:22px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.oknoHlava{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.zavri{font:inherit;font-size:13px;background:0;border:0;cursor:pointer;color:var(--ink2)}
+.zavri:hover{color:var(--ink)}
+.pole{display:block;margin-bottom:14px}
+.pole>span{display:block;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--ink2);margin-bottom:5px}
+.pole input,.pole select,.pole textarea{width:100%;font:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--linka);border-radius:8px;background:var(--karta);color:var(--ink)}
+.pole input:focus,.pole select:focus,.pole textarea:focus{outline:none;border-color:var(--zelena);box-shadow:0 0 0 3px var(--zelena-svetla)}
 .pole-check .prep{padding:8px 0}
 .pole-check input{width:auto}
-.blok{border:1px solid var(--linka);border-left:3px solid var(--pine);padding:12px 12px 2px;margin-bottom:12px;background:#f2f4ef}
+.blok{border:1px solid var(--linka);border-left:3px solid var(--zelena);border-radius:8px;padding:14px 14px 2px;margin-bottom:14px;background:#fbfdfa}
 .dvojice{display:flex;gap:12px}
 .dvojice .pole{flex:1}
 .vidiVolby{display:flex;gap:6px;flex-wrap:wrap}
-.chip{font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--linka);background:#fff;cursor:pointer;color:var(--ink2)}
-.chip.on{background:var(--ink);color:#f2f4ef;border-color:var(--ink)}
-.napoveda{font-size:11px;color:var(--ink2);margin:7px 0 0;line-height:1.45}
-.oknoPata{display:flex;justify-content:space-between;align-items:center;margin-top:16px}
-.smazat{font:inherit;font-size:12px;background:0;border:0;color:var(--krev);cursor:pointer;text-decoration:underline}
-.komentareBlok{margin-bottom:14px;border-top:1px solid var(--linka);padding-top:12px}
-.komentareNadpis{display:block;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);margin-bottom:6px}
+.chip{font:inherit;font-size:12px;padding:5px 11px;border:1px solid var(--linka);border-radius:999px;background:var(--karta);cursor:pointer;color:var(--ink2)}
+.chip.on{background:var(--zelena);color:#fff;border-color:var(--zelena)}
+.napoveda{font-size:12px;color:var(--ink2);margin:7px 0 0;line-height:1.45}
+.oknoPata{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:18px}
+.smazat{font:inherit;font-size:12px;background:0;border:0;color:var(--krev);cursor:pointer}
+
+.polozky{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:5px}
+.polozky li{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#f9fafb;border:1px solid var(--linka);border-radius:8px;padding:6px 10px;font-size:13px}
+.polozky .odebrat{font:inherit;font-size:16px;line-height:1;background:0;border:0;color:var(--ink2);cursor:pointer;padding:0 2px}
+.polozky .odebrat:hover{color:var(--krev)}
+.pridatPolozku{display:flex;gap:8px}
+.pridatPolozku input{flex:1;font:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--linka);border-radius:8px;background:var(--karta);color:var(--ink)}
+
+.komentareBlok,.prilohyBlok{margin-bottom:14px;border-top:1px solid var(--linka2);padding-top:14px}
+.komentareNadpis{display:block;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--ink2);margin-bottom:8px}
 .komentare{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:8px;max-height:220px;overflow:auto}
-.komentare li{background:#fff;border:1px solid var(--linka);border-left:3px solid var(--pine);padding:7px 9px}
-.komMeta{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.04em;color:var(--ink2);margin-bottom:3px}
+.komentare li{background:#f9fafb;border:1px solid var(--linka);border-radius:8px;padding:8px 10px}
+.komMeta{font-size:11px;color:var(--ink2);margin-bottom:3px;font-weight:500}
 .komText{font-size:13px;line-height:1.45;white-space:pre-wrap}
 .pridatKom{display:flex;gap:8px;align-items:flex-end}
-.pridatKom textarea{flex:1;font:inherit;font-size:14px;padding:7px 8px;border:1px solid var(--linka);background:#fff;color:var(--ink);resize:vertical}
-.pridatKom .primar{white-space:nowrap}
-.prilohyBlok{margin-bottom:14px;border-top:1px solid var(--linka);padding-top:12px}
-.prilohy{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:4px}
-.prilohy li{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--linka);padding:6px 9px}
-.prilohaOdkaz{font:inherit;font-size:13px;background:0;border:0;padding:0;color:var(--pine);text-decoration:underline;text-underline-offset:2px;cursor:pointer;text-align:left;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.prilohaOdkaz:hover{color:#174a3b}
-.prilohaMeta{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink2);white-space:nowrap}
+.pridatKom textarea{flex:1;font:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--linka);border-radius:8px;background:var(--karta);color:var(--ink);resize:vertical}
+
+.prilohy{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:5px}
+.prilohy li{display:flex;align-items:center;gap:8px;background:#f9fafb;border:1px solid var(--linka);border-radius:8px;padding:7px 10px}
+.prilohaOdkaz{font:inherit;font-size:13px;background:0;border:0;padding:0;color:var(--zelena-tmava);font-weight:500;text-decoration:none;cursor:pointer;text-align:left;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prilohaOdkaz:hover{text-decoration:underline}
+.prilohaMeta{font-size:11px;color:var(--ink2);white-space:nowrap}
 .prilohy .odebrat{font:inherit;font-size:16px;line-height:1;background:0;border:0;color:var(--ink2);cursor:pointer;padding:0 2px}
 .prilohy .odebrat:hover{color:var(--krev)}
-.nahratBtn{display:inline-block;font:inherit;font-size:12px;padding:6px 11px;border:1px solid var(--ink);background:0;color:var(--ink);cursor:pointer}
-.nahratBtn:hover{background:var(--ink);color:#f2f4ef}
-.deska :focus-visible{outline:2px solid var(--pine);outline-offset:2px}
-.prihlasovaci{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px}
-.loginKarta{background:var(--karta);border:1px solid var(--ink);max-width:360px;width:100%;padding:26px 24px}
-.loginKarta h1{margin:2px 0 0}
-.prepnoutRezim{display:block;width:100%;margin-top:12px;font:inherit;font-size:12px;background:0;border:0;
-  color:var(--pine);cursor:pointer;text-decoration:underline;text-align:center}
-@media (max-width:620px){.telo{flex-direction:column}.rail{flex:1 1 auto;width:100%}.dvojice{flex-direction:column;gap:0}
-  .hlava{padding:16px}.telo{padding:14px}}
+.nahratBtn{display:inline-block;font:inherit;font-size:12px;font-weight:500;padding:7px 12px;border:1px solid var(--linka);border-radius:8px;background:var(--karta);color:var(--ink);cursor:pointer}
+.nahratBtn:hover{border-color:var(--zelena);color:var(--zelena-tmava)}
+
+.deska :focus-visible{outline:2px solid var(--zelena);outline-offset:2px}
+
+.prihlasovaci{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px;background:var(--bg)}
+.loginKarta{background:var(--karta);border:1px solid var(--linka);border-radius:16px;max-width:380px;width:100%;padding:32px 28px;box-shadow:0 10px 40px rgba(0,0,0,.08)}
+.loginLogo{height:46px;width:auto;margin-bottom:18px;display:block}
+.loginKarta h1{margin:2px 0 0;font-size:24px}
+.prepnoutRezim{display:block;width:100%;margin-top:14px;font:inherit;font-size:13px;font-weight:500;background:0;border:0;color:var(--zelena-tmava);cursor:pointer;text-align:center}
+.prepnoutRezim:hover{text-decoration:underline}
+
+@media (max-width:640px){
+  .telo{flex-direction:column;padding:14px}
+  .rail{flex:1 1 auto;width:100%;flex-direction:row;overflow-x:auto;gap:6px}
+  .railBtn{white-space:nowrap}
+  .hlava{padding:14px 16px}
+  .dvojice{flex-direction:column;gap:0}
+}
 `;
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
