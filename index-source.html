@@ -429,7 +429,7 @@ function DeskaObchodu({ session }) {
   const viditelne = useMemo(() => zaznamy.filter((z) => dostupneIds.has(z.modul)), [zaznamy, plny, email]);
 
   const hlidane = useMemo(() => {
-    let l = viditelne.flatMap(lhutyZe);
+    let l = viditelne.flatMap((z) => lhutyZe(z));
     if (jenMoje) l = l.filter((x) => x.z.odpovedny === kdo);
     return l.map((x) => ({ ...x, d: dnyDo(x.datum) })).filter((x) => x.d <= x.pred).sort((a, b) => a.d - b.d || prioPoradi(b.z.priorita) - prioPoradi(a.z.priorita));
   }, [viditelne, jenMoje, kdo]);
