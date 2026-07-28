@@ -39,6 +39,7 @@ const UCTY = {
   "lubos.rechziegel@garden-line.eu": { jmeno: "Luboš Rechziegel", plny: false },
 };
 const LIDE = Object.values(UCTY).map((u) => u.jmeno);
+const jmenoZEmailu = (e) => (e ? (UCTY[e]?.jmeno || e) : "—");
 
 const MODULY = [
   { id: "ukoly", label: "Úkoly", terminPopis: "Termín splnění" },
@@ -46,9 +47,12 @@ const MODULY = [
   { id: "projekty", label: "Vlastní projekty", terminPopis: "Termín nebo lhůta" },
   { id: "majetek", label: "Majetek", terminPopis: "Lhůta", chraneny: true },
   { id: "etern", label: "ETERN Group", terminPopis: "Termín", chraneny: true },
+  { id: "vk_osobni", label: "VK osobní", terminPopis: "Termín", chraneny: true, jen: "vit.kolacek@garden-line.eu" },
 ];
 
 const jeChraneny = (modul) => !!MODULY.find((m) => m.id === modul)?.chraneny;
+// smí uživatel s daným e-mailem vidět modul? (jen: osobní, chraneny: plný přístup, jinak všichni)
+const smiModul = (m, email, plny) => (m.jen ? email === m.jen : m.chraneny ? plny : true);
 
 const STAVY = ["Nové", "Probíhá", "Čeká na jiné", "Hotovo"];
 const FORMY_JISTOTY = ["Peněžní na účet", "Bankovní záruka", "Pojištění záruky"];
@@ -108,20 +112,21 @@ const vidiNa = (z, kdo) => {
   return z.vidi.includes(kdo);
 };
 
-const lhutyZe = (z) => {
-  if (z.stav === "Hotovo") return [];
+const lhutyZe = (z, proKalendar = false) => {
+  const hotovo = z.stav === "Hotovo";
+  if (hotovo && !proKalendar) return [];
   const out = [];
   if (z.termin)
     out.push({
       klic: z.id + ":hlavni", z, nadpis: z.nazev,
       popis: MODULY.find((m) => m.id === z.modul)?.terminPopis || "Lhůta",
-      datum: z.termin, cas: z.modul === "nabidky" ? z.lhutaCas : null, pred: z.pred ?? 7,
+      datum: z.termin, cas: z.modul === "nabidky" ? z.lhutaCas : null, pred: z.pred ?? 7, splneno: hotovo,
     });
-  if (z.modul === "nabidky" && z.jistotaPozadovana && z.jistotaTermin && !z.jistotaSlozena)
+  if (!hotovo && z.modul === "nabidky" && z.jistotaPozadovana && z.jistotaTermin && !z.jistotaSlozena)
     out.push({
       klic: z.id + ":jistota", z, nadpis: z.nazev,
       popis: "Složit jistotu " + kc(z.jistotaCastka) + (z.jistotaForma ? " · " + z.jistotaForma : ""),
-      datum: z.jistotaTermin, pred: z.pred ?? 7,
+      datum: z.jistotaTermin, pred: z.pred ?? 7, splneno: false,
     });
   return out;
 };
@@ -168,6 +173,7 @@ const toApp = (r) => ({
   jistotaForma: r.jistota_forma, jistotaTermin: r.jistota_termin, jistotaSlozena: r.jistota_slozena,
   vidi: r.vidi, splneno: r.splneno, splnenoKdy: r.splneno_kdy || [], opakovani: r.opakovani || "ne",
   ukolLidi: r.ukol_lidi || [], splnenoKdo: r.splneno_kdo, komentare: r.komentare || [], priorita: r.priorita || "normalni", prilohy: r.prilohy || [],
+  vytvoril: r.vytvoril, upravil: r.upravil, vytvoreno: r.created_at, upraveno: r.updated_at,
 });
 const toDb = (z) => ({
   id: z.id, modul: z.modul, nazev: z.nazev, odpovedny: z.odpovedny,
@@ -330,7 +336,9 @@ function DeskaObchodu({ session }) {
   const ucet = UCTY[session.user.email] || { jmeno: session.user.email, plny: false };
   const kdo = ucet.jmeno;
   const plny = ucet.plny;
-  const modulyDostupne = plny ? MODULY : MODULY.filter((m) => !m.chraneny);
+  const email = session.user.email;
+  const modulyDostupne = MODULY.filter((m) => smiModul(m, email, plny));
+  const dostupneIds = new Set(modulyDostupne.map((m) => m.id));
   const [zaznamy, setZaznamy] = useState([]);
   const [stavDat, setStavDat] = useState("nacitam");
   const [pohled, setPohled] = useState("prehled");
@@ -418,7 +426,7 @@ function DeskaObchodu({ session }) {
     } catch (e) { alert("Komentář se nepodařilo uložit: " + e.message); }
   };
 
-  const viditelne = useMemo(() => (plny ? zaznamy : zaznamy.filter((z) => !jeChraneny(z.modul))), [zaznamy, plny]);
+  const viditelne = useMemo(() => zaznamy.filter((z) => dostupneIds.has(z.modul)), [zaznamy, plny, email]);
 
   const hlidane = useMemo(() => {
     let l = viditelne.flatMap(lhutyZe);
@@ -487,7 +495,7 @@ function DeskaObchodu({ session }) {
             const n = viditelne.filter((z) => z.modul === m.id && z.stav !== "Hotovo").length;
             return (
               <button key={m.id} className={pohled === m.id ? "railBtn on" : "railBtn"} onClick={() => setPohled(m.id)}>
-                <span className="railLabel">{m.label}{m.chraneny && <em className="zamek">omezeno</em>}</span>
+                <span className="railLabel">{m.label}{m.jen ? <em className="zamekJa">jen já</em> : m.chraneny && <em className="zamek">omezeno</em>}</span>
                 <span className="railPocet">{n}</span>
               </button>
             );
@@ -636,8 +644,6 @@ function DetailZaznamu({ z, onToggleOsoba, modulLabel }) {
         {z.profil && (<a className="odkaz" href={odkazUrl(z.profil)} target="_blank" rel="noopener noreferrer">Profil zadavatele</a>)}
         {z.rozpoctar && <span>počítá {z.rozpoctar}</span>}
         {z.opakovani && z.opakovani !== "ne" && (<span>{OPAKOVANI.find((o) => o.id === z.opakovani)?.label.toLowerCase()}</span>)}
-        {z.splnenoKdy?.length > 0 && (<span>splněno {z.splnenoKdy.length}×, naposledy {czDatum(zapis(z.splnenoKdy[z.splnenoKdy.length - 1]).s)}</span>)}
-        {z.splneno && <span>splněno {czDatum(z.splneno)}</span>}
         {z.komentare?.length > 0 && <span>{z.komentare.length}× koment.</span>}
         {z.prilohy?.length > 0 && <span>{z.prilohy.length} příl.</span>}
       </div>
@@ -983,6 +989,12 @@ function Formular({ zaznam, ja, onUloz, onSmaz, onKomentar, onZavri }) {
             <button type="button" className="primar" onClick={pridatKomentar}>Přidat</button>
           </div>
         </div>
+        {(z.vytvoreno || z.upraveno) && (
+          <div className="auditPaticka">
+            {z.vytvoreno && <span>Vytvořeno {czKdy(z.vytvoreno)} · <span className="kdo">{jmenoZEmailu(z.vytvoril)}</span></span>}
+            {z.upraveno && z.upraveno !== z.vytvoreno && <span>Naposledy upraveno {czKdy(z.upraveno)} · <span className="kdo">{jmenoZEmailu(z.upravil)}</span></span>}
+          </div>
+        )}
         <div className="oknoPata">
           <span className="napoveda" style={{ margin: 0, maxWidth: "55%" }}>Záznamy se nemažou. Hotové dáte tlačítkem „Hotovo" do Splněných, kde zůstanou i s tím, kdo je splnil.</span>
           <button className="primar" onClick={() => onUloz(z)}>Uložit záznam</button>
@@ -1002,13 +1014,17 @@ function Kalendar({ zaznamy, onEdit }) {
   const dnesD = new Date();
   const [rok, setRok] = useState(dnesD.getFullYear());
   const [mesic, setMesic] = useState(dnesD.getMonth());
+  const [skrytSplnene, setSkrytSplnene] = useState(false);
   const nazvyMesicu = ["Leden", "Únor", "Březen", "Duben", "Květen", "Červen", "Červenec", "Srpen", "Září", "Říjen", "Listopad", "Prosinec"];
   const dnyTydne = ["Po", "Út", "St", "Čt", "Pá", "So", "Ne"];
   const udalosti = useMemo(() => {
     const m = {};
-    zaznamy.forEach((z) => lhutyZe(z).forEach((l) => { (m[l.datum] = m[l.datum] || []).push({ z, jistota: l.klic.endsWith(":jistota") }); }));
+    zaznamy.forEach((z) => lhutyZe(z, true).forEach((l) => {
+      if (skrytSplnene && l.splneno) return;
+      (m[l.datum] = m[l.datum] || []).push({ z, jistota: l.klic.endsWith(":jistota"), splneno: l.splneno });
+    }));
     return m;
-  }, [zaznamy]);
+  }, [zaznamy, skrytSplnene]);
   const startDen = (new Date(rok, mesic, 1).getDay() + 6) % 7;
   const pocetDni = new Date(rok, mesic + 1, 0).getDate();
   const bunky = [];
@@ -1023,6 +1039,7 @@ function Kalendar({ zaznamy, onEdit }) {
       <div className="panelHlava">
         <h2>{nazvyMesicu[mesic]} {rok}</h2>
         <div className="ovladace">
+          <label className="prep"><input type="checkbox" checked={skrytSplnene} onChange={(e) => setSkrytSplnene(e.target.checked)} /> Skrýt splněné</label>
           <button className="druhotny" onClick={() => posun(-1)}>‹ Předchozí</button>
           <button className="druhotny" onClick={naDnes}>Dnes</button>
           <button className="druhotny" onClick={() => posun(1)}>Další ›</button>
@@ -1039,8 +1056,8 @@ function Kalendar({ zaznamy, onEdit }) {
               <div key={i} className={"kalBunka" + (iso === dnesIso ? " dnes" : "")}>
                 <div className="kalDen">{den}</div>
                 {ev.slice(0, 4).map((e, j) => (
-                  <button key={j} className={"kalUdalost" + prioTrida(e.z.priorita)} onClick={() => onEdit(e.z)} title={e.z.nazev}>
-                    {e.jistota ? "Jistota: " : ""}{e.z.nazev}
+                  <button key={j} className={"kalUdalost" + prioTrida(e.z.priorita) + (e.splneno ? " splneno" : "")} onClick={() => onEdit(e.z)} title={e.z.nazev}>
+                    {e.splneno ? "✓ " : ""}{e.jistota ? "Jistota: " : ""}{e.z.nazev}
                   </button>
                 ))}
                 {ev.length > 4 && <div className="kalVic">+{ev.length - 4} dalších</div>}
@@ -1103,6 +1120,7 @@ const CSS = `
 .railBtn.on .railLabel{color:var(--ink);font-weight:600}
 .railLabel{display:flex;flex-direction:column;font-size:14px;font-weight:500}
 .zamek{font-style:normal;font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--jantar-tmava)}
+.zamekJa{font-style:normal;font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--zelena-tmava);background:var(--zelena-svetla);padding:1px 6px;border-radius:999px;margin-left:2px}
 .railPocet{font-size:12px;font-weight:600;color:var(--ink2);background:var(--linka2);padding:1px 8px;border-radius:999px;min-width:24px;text-align:center}
 .railBtn.on .railPocet{background:var(--zelena-svetla);color:var(--zelena-tmava)}
 .railPocet.zvyrazni{background:var(--krev);color:#fff}
@@ -1175,6 +1193,8 @@ const CSS = `
 .kalUdalost:hover{background:#e9ecef}
 .kalUdalost.prio-vysoka{border-left-color:var(--jantar)}
 .kalUdalost.prio-kriticka{border-left-color:var(--krev)}
+.kalUdalost.splneno{background:#e7f5ec;border-left-color:var(--zelena);color:#6b8577;text-decoration:line-through;text-decoration-color:rgba(0,176,80,.55)}
+.kalUdalost.splneno:hover{background:#daeee2}
 .kalVic{font-size:10px;color:var(--ink2);padding-left:3px}
 
 .ukolLide{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
@@ -1202,6 +1222,8 @@ const CSS = `
 .chip.on{background:var(--zelena);color:#fff;border-color:var(--zelena)}
 .napoveda{font-size:12px;color:var(--ink2);margin:7px 0 0;line-height:1.45}
 .oknoPata{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:18px}
+.auditPaticka{margin-top:16px;padding-top:12px;border-top:1px solid var(--linka2);display:flex;flex-wrap:wrap;gap:4px 18px;font-size:12px;color:var(--ink2)}
+.auditPaticka .kdo{color:var(--ink);font-weight:600}
 .smazat{font:inherit;font-size:12px;background:0;border:0;color:var(--krev);cursor:pointer}
 
 .polozky{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:5px}
