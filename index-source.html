@@ -56,6 +56,11 @@ const smiModul = (m, email, plny) => (m.jen ? email === m.jen : m.chraneny ? pln
 
 const STAVY = ["Nové", "Probíhá", "Čeká na jiné", "Hotovo"];
 const FORMY_JISTOTY = ["Peněžní na účet", "Bankovní záruka", "Pojištění záruky"];
+const STREDISKA = ["MEZ", "LTM"];
+const STREDISKO_ODPOVEDNY = { MEZ: "Olga Zelníčková", LTM: "Vít Koláček" };
+const RIZENI = [{ id: "otevrene", label: "Otevřené" }, { id: "uzsi", label: "Užší (žádost o účast)" }];
+const jeUzsi = (z) => z.modul === "nabidky" && z.rizeni === "uzsi";
+const terminPopisZe = (z) => (jeUzsi(z) ? "Lhůta pro podání žádosti o účast" : (MODULY.find((m) => m.id === z.modul)?.terminPopis || "Lhůta"));
 
 const PRIORITY = [
   { id: "normalni", label: "Normální", poradi: 0 },
@@ -118,15 +123,9 @@ const lhutyZe = (z, proKalendar = false) => {
   const out = [];
   if (z.termin)
     out.push({
-      klic: z.id + ":hlavni", z, nadpis: z.nazev,
-      popis: MODULY.find((m) => m.id === z.modul)?.terminPopis || "Lhůta",
+      klic: z.id + ":hlavni", z, nadpis: z.nazev + (jeUzsi(z) ? " – žádost o účast" : ""),
+      popis: terminPopisZe(z),
       datum: z.termin, cas: z.modul === "nabidky" ? z.lhutaCas : null, pred: z.pred ?? 7, splneno: hotovo,
-    });
-  if (!hotovo && z.modul === "nabidky" && z.jistotaPozadovana && z.jistotaTermin && !z.jistotaSlozena)
-    out.push({
-      klic: z.id + ":jistota", z, nadpis: z.nazev,
-      popis: "Složit jistotu " + kc(z.jistotaCastka) + (z.jistotaForma ? " · " + z.jistotaForma : ""),
-      datum: z.jistotaTermin, pred: z.pred ?? 7, splneno: false,
     });
   return out;
 };
@@ -138,7 +137,7 @@ const prazdny = (modul, kdoDef) => ({
   id: crypto.randomUUID(),
   modul, nazev: "", odpovedny: kdoDef || LIDE[0], termin: posun(7), pred: 7, stav: "Nové", pozn: "", ukolLidi: [], komentare: [], priorita: "normalni", prilohy: [],
   ...(modul === "nabidky"
-    ? { chybiPolozky: [], rozpoctar: "", profil: "", lhutaCas: "", jistotaPozadovana: false, jistotaCastka: 0, jistotaForma: FORMY_JISTOTY[0], jistotaTermin: "", jistotaSlozena: false }
+    ? { chybiPolozky: [], rozpoctar: "", profil: "", lhutaCas: "", jistotaPozadovana: false, jistotaCastka: 0, jistotaForma: FORMY_JISTOTY[0], jistotaTermin: "", jistotaSlozena: false, stredisko: "", rizeni: "otevrene" }
     : {}),
   ...(jeChraneny(modul) ? { vidi: [LIDE[0]] } : {}),
 });
@@ -174,6 +173,7 @@ const toApp = (r) => ({
   vidi: r.vidi, splneno: r.splneno, splnenoKdy: r.splneno_kdy || [], opakovani: r.opakovani || "ne",
   ukolLidi: r.ukol_lidi || [], splnenoKdo: r.splneno_kdo, komentare: r.komentare || [], priorita: r.priorita || "normalni", prilohy: r.prilohy || [],
   vytvoril: r.vytvoril, upravil: r.upravil, vytvoreno: r.created_at, upraveno: r.updated_at,
+  stredisko: r.stredisko || "", rizeni: r.rizeni || "otevrene",
 });
 const toDb = (z) => ({
   id: z.id, modul: z.modul, nazev: z.nazev, odpovedny: z.odpovedny,
@@ -184,6 +184,7 @@ const toDb = (z) => ({
   jistota_slozena: !!z.jistotaSlozena, vidi: z.vidi ?? null,
   splneno: z.splneno || null, splneno_kdy: z.splnenoKdy || [], opakovani: z.opakovani || "ne",
   ukol_lidi: z.ukolLidi || [], splneno_kdo: z.splnenoKdo || null, komentare: z.komentare || [], priorita: z.priorita || "normalni", prilohy: z.prilohy || [],
+  stredisko: z.stredisko || null, rizeni: z.rizeni || "otevrene",
 });
 
 const nactiZaznamy = async () => {
@@ -229,18 +230,13 @@ function textIcs(lhuty) {
   lhuty.forEach((l) => {
     const z = l.z;
     const casPlatny = l.cas && /^\d{1,2}:\d{2}$/.test(l.cas);
-    let nazev = l.popis + " – " + l.nadpis;
-    if (z.modul === "nabidky") {
-      nazev += z.jistotaPozadovana
-        ? " · Jistota " + kc(z.jistotaCastka) + (z.jistotaSlozena ? " (složena)" : " (nesložena)")
-        : " · Bez jistoty";
-    }
-    const popis = ["Odpovídá: " + z.odpovedny];
-    if (z.rozpoctar) popis.push("Počítá: " + z.rozpoctar);
-    if (z.modul === "nabidky") {
-      popis.push(z.jistotaPozadovana
-        ? "Jistota: " + kc(z.jistotaCastka) + (z.jistotaForma ? ", " + z.jistotaForma : "") + (z.jistotaSlozena ? " – složena" : " – nesložena")
-        : "Jistota: ne");
+    const nazev = l.nadpis;
+    const popis = [];
+    if (z.stredisko) popis.push("Středisko: " + z.stredisko);
+    popis.push("Odpovídá: " + z.odpovedny);
+    if (!jeUzsi(z) && z.rozpoctar) popis.push("Počítá: " + z.rozpoctar);
+    if (!jeUzsi(z) && z.modul === "nabidky" && z.jistotaPozadovana) {
+      popis.push("Jistota: " + kc(z.jistotaCastka) + (z.jistotaForma ? ", " + z.jistotaForma : ""));
     }
     if (casPlatny) popis.push("Přesný čas podání: " + l.cas);
     if (z.profil) popis.push("Profil zadavatele: " + odkazUrl(z.profil));
@@ -534,8 +530,7 @@ function DeskaObchodu({ session }) {
               ) : (
                 <ul className="seznam">
                   {hlidane.map((l) => (<LhutaRadek key={l.klic} l={l} mizi={mizici.has(l.klic)} onEdit={() => setEdit(l.z)} onToggleOsoba={(jmeno) => prepniOsobu(l.z, jmeno)} onHotovo={() => {
-                    if (l.klic.endsWith(":jistota")) dokoncitAnimovane(l.klic, () => uloz({ ...l.z, jistotaSlozena: true }));
-                    else if (l.z.opakovani && l.z.opakovani !== "ne") prepniHotovo(l.z);
+                    if (l.z.opakovani && l.z.opakovani !== "ne") prepniHotovo(l.z);
                     else dokoncitAnimovane(l.klic, () => prepniHotovo(l.z));
                   }} />))}
                 </ul>
@@ -633,24 +628,24 @@ const prioTrida = (p) => (p && p !== "normalni" ? " prio-" + p : "");
 
 function DetailZaznamu({ z, onToggleOsoba, modulLabel }) {
   const hotovo = z.stav === "Hotovo";
-  const jistotaVisi = z.modul === "nabidky" && z.jistotaPozadovana && !z.jistotaSlozena && !hotovo;
+  const bezRozpoctare = z.modul === "nabidky" && !jeUzsi(z) && !z.rozpoctar && !hotovo;
   return (
     <React.Fragment>
       <div className="meta">
         {modulLabel && <span className="znacka">{modulLabel}</span>}
+        {z.stredisko && <span className="znacka">{z.stredisko}</span>}
+        {jeUzsi(z) && <span className="znacka">Užší řízení</span>}
         <span>{z.odpovedny}</span>
         <span>{z.stav}</span>
         <span>{czDatum(z.termin)}</span>
         {z.profil && (<a className="odkaz" href={odkazUrl(z.profil)} target="_blank" rel="noopener noreferrer">Profil zadavatele</a>)}
-        {z.rozpoctar && <span>počítá {z.rozpoctar}</span>}
+        {!jeUzsi(z) && z.rozpoctar && <span>počítá {z.rozpoctar}</span>}
         {z.opakovani && z.opakovani !== "ne" && (<span>{OPAKOVANI.find((o) => o.id === z.opakovani)?.label.toLowerCase()}</span>)}
-        {z.komentare?.length > 0 && <span>{z.komentare.length}× koment.</span>}
-        {z.prilohy?.length > 0 && <span>{z.prilohy.length} příl.</span>}
       </div>
       {z.modul === "nabidky" && z.termin && (
-        <div className="podani">Podání nabídky: {czDatum(z.termin)}{z.lhutaCas ? " v " + z.lhutaCas : ""}</div>
+        <div className="podani">{jeUzsi(z) ? "Podání žádosti o účast" : "Podání nabídky"}: {czDatum(z.termin)}{z.lhutaCas ? " v " + z.lhutaCas : ""}</div>
       )}
-      {jistotaVisi && <div className="varovani">Jistota {kc(z.jistotaCastka)} · nesložena</div>}
+      {bezRozpoctare && <div className="varovani">Rozpočtář není přidělen</div>}
       {z.chybiPolozky?.length > 0 && <div className="chybi">Chybí: {z.chybiPolozky.join(" · ")}</div>}
       {z.ukolLidi?.length > 0 && (
         <div className="ukolLide">
@@ -674,7 +669,6 @@ function SplnenoBadge() {
   );
 }
 function LhutaRadek({ l, onEdit, onToggleOsoba, onHotovo, mizi }) {
-  const jeJistota = l.klic.endsWith(":jistota");
   return (
     <li className={"radek" + prioTrida(l.z.priorita) + (mizi ? " mizi" : "")}>
       <Odpocet d={l.d} />
@@ -685,7 +679,7 @@ function LhutaRadek({ l, onEdit, onToggleOsoba, onHotovo, mizi }) {
       </div>
       {mizi ? <SplnenoBadge /> : (
         <div className="radekAkce">
-          <button className="hotovoBtn" onClick={onHotovo}>{jeJistota ? "Jistota složena" : (l.z.opakovani && l.z.opakovani !== "ne" ? "Splněno" : "Hotovo")}</button>
+          <button className="hotovoBtn" onClick={onHotovo}>{l.z.opakovani && l.z.opakovani !== "ne" ? "Splněno" : "Hotovo"}</button>
           <button className="odskrtnout" onClick={() => stahniIcs([l], "lhuta.ics")}>Do kalendáře</button>
         </div>
       )}
@@ -703,9 +697,14 @@ function Radek({ z, onEdit, onHotovo, onToggleOsoba, mizi }) {
         <DetailZaznamu z={z} onToggleOsoba={onToggleOsoba} />
       </div>
       {mizi ? <SplnenoBadge /> : (
-        <button className="odskrtnout" onClick={onHotovo}>
-          {z.opakovani && z.opakovani !== "ne" ? "Splněno" : hotovo ? "Vrátit" : "Hotovo"}
-        </button>
+        <div className="radekAkce">
+          <button className="odskrtnout" onClick={onHotovo}>
+            {z.opakovani && z.opakovani !== "ne" ? "Splněno" : hotovo ? "Vrátit" : "Hotovo"}
+          </button>
+          {!hotovo && z.termin && (
+            <button className="odskrtnout" onClick={() => stahniIcs(lhutyZe(z), "lhuta.ics")}>Do kalendáře</button>
+          )}
+        </div>
       )}
     </li>
   );
@@ -824,6 +823,26 @@ function Formular({ zaznam, ja, onUloz, onSmaz, onKomentar, onZavri }) {
           <span className="eyebrow">{MODULY.find((m) => m.id === z.modul)?.label}</span>
           <button className="zavri" onClick={onZavri}>Zavřít</button>
         </div>
+        {z.modul === "nabidky" && (
+          <div className="dvojice">
+            <label className="pole">
+              <span>Středisko</span>
+              <select value={z.stredisko || ""} onChange={(e) => { const v = e.target.value; setZ((p) => ({ ...p, stredisko: v, odpovedny: STREDISKO_ODPOVEDNY[v] || p.odpovedny })); }}>
+                <option value="">— vyberte —</option>
+                {STREDISKA.map((s) => (<option key={s} value={s}>{s}</option>))}
+              </select>
+            </label>
+            <label className="pole">
+              <span>Druh řízení</span>
+              <select value={z.rizeni || "otevrene"} onChange={(e) => zmen("rizeni", e.target.value)}>
+                {RIZENI.map((r) => (<option key={r.id} value={r.id}>{r.label}</option>))}
+              </select>
+            </label>
+          </div>
+        )}
+        {jeUzsi(z) && (
+          <p className="napoveda" style={{ marginTop: -6 }}>Užší řízení: v prvním kole se podává žádost o účast — jistota se neskládá a nabídka se zatím nepočítá.</p>
+        )}
         <label className="pole">
           <span>Název</span>
           <input value={z.nazev} onChange={(e) => zmen("nazev", e.target.value)} placeholder="Název zakázky nebo úkolu" autoFocus />
@@ -852,7 +871,7 @@ function Formular({ zaznam, ja, onUloz, onSmaz, onKomentar, onZavri }) {
 
         <div className="dvojice">
           <label className="pole">
-            <span>{MODULY.find((m) => m.id === z.modul)?.terminPopis}</span>
+            <span>{terminPopisZe(z)}</span>
             <input type="date" value={z.termin || ""} onChange={(e) => zmen("termin", e.target.value)} />
           </label>
           <label className="pole">
@@ -862,12 +881,14 @@ function Formular({ zaznam, ja, onUloz, onSmaz, onKomentar, onZavri }) {
             </select>
           </label>
         </div>
-        <label className="pole">
-          <span>Opakování</span>
-          <select value={z.opakovani || "ne"} onChange={(e) => zmen("opakovani", e.target.value)}>
-            {OPAKOVANI.map((o) => (<option key={o.id} value={o.id}>{o.label}</option>))}
-          </select>
-        </label>
+        {z.modul !== "nabidky" && (
+          <label className="pole">
+            <span>Opakování</span>
+            <select value={z.opakovani || "ne"} onChange={(e) => zmen("opakovani", e.target.value)}>
+              {OPAKOVANI.map((o) => (<option key={o.id} value={o.id}>{o.label}</option>))}
+            </select>
+          </label>
+        )}
 
         <div className="pole">
           <span>Úkol pro více lidí (nepovinné)</span>
@@ -890,42 +911,32 @@ function Formular({ zaznam, ja, onUloz, onSmaz, onKomentar, onZavri }) {
               <span>Profil zadavatele</span>
               <input value={z.profil || ""} onChange={(e) => zmen("profil", e.target.value)} placeholder="Odkaz na zakázku" />
             </label>
-            <label className="pole">
-              <span>Rozpočtář</span>
-              <input value={z.rozpoctar || ""} onChange={(e) => zmen("rozpoctar", e.target.value)} placeholder="Kdo nabídku počítá" list="lide-seznam" />
-              <datalist id="lide-seznam">{LIDE.map((l) => (<option key={l} value={l} />))}</datalist>
-            </label>
-            <label className="prep silny">
-              <input type="checkbox" checked={!!z.jistotaPozadovana} onChange={(e) => zmen("jistotaPozadovana", e.target.checked)} />
-              Zadavatel požaduje jistotu (§ 41 ZZVZ)
-            </label>
-            {z.jistotaPozadovana && (
-              <>
-                <div className="dvojice">
-                  <label className="pole">
-                    <span>Výše jistoty</span>
-                    <input type="number" min="0" step="1000" value={z.jistotaCastka || 0} onChange={(e) => zmen("jistotaCastka", Number(e.target.value))} />
-                  </label>
-                  <label className="pole">
-                    <span>Forma</span>
-                    <select value={z.jistotaForma || FORMY_JISTOTY[0]} onChange={(e) => zmen("jistotaForma", e.target.value)}>
-                      {FORMY_JISTOTY.map((f) => (<option key={f}>{f}</option>))}
-                    </select>
-                  </label>
-                </div>
-                <div className="dvojice">
-                  <label className="pole">
-                    <span>Složit do</span>
-                    <input type="date" value={z.jistotaTermin || ""} onChange={(e) => zmen("jistotaTermin", e.target.value)} />
-                  </label>
-                  <label className="pole pole-check">
-                    <span>Stav jistoty</span>
-                    <label className="prep">
-                      <input type="checkbox" checked={!!z.jistotaSlozena} onChange={(e) => zmen("jistotaSlozena", e.target.checked)} /> Složena
-                    </label>
-                  </label>
-                </div>
-              </>
+            {!jeUzsi(z) && (
+              <label className="pole">
+                <span>Rozpočtář</span>
+                <input value={z.rozpoctar || ""} onChange={(e) => zmen("rozpoctar", e.target.value)} placeholder="Kdo nabídku počítá" list="lide-seznam" />
+                <datalist id="lide-seznam">{LIDE.map((l) => (<option key={l} value={l} />))}</datalist>
+              </label>
+            )}
+            {!jeUzsi(z) && (
+              <label className="prep silny">
+                <input type="checkbox" checked={!!z.jistotaPozadovana} onChange={(e) => zmen("jistotaPozadovana", e.target.checked)} />
+                Zadavatel požaduje jistotu (§ 41 ZZVZ)
+              </label>
+            )}
+            {!jeUzsi(z) && z.jistotaPozadovana && (
+              <div className="dvojice">
+                <label className="pole">
+                  <span>Výše jistoty</span>
+                  <input type="number" min="0" step="1000" value={z.jistotaCastka || 0} onChange={(e) => zmen("jistotaCastka", Number(e.target.value))} />
+                </label>
+                <label className="pole">
+                  <span>Forma</span>
+                  <select value={z.jistotaForma || FORMY_JISTOTY[0]} onChange={(e) => zmen("jistotaForma", e.target.value)}>
+                    {FORMY_JISTOTY.map((f) => (<option key={f}>{f}</option>))}
+                  </select>
+                </label>
+              </div>
             )}
             <div className="pole">
               <span>Co ještě chybí</span>
@@ -939,7 +950,7 @@ function Formular({ zaznam, ja, onUloz, onSmaz, onKomentar, onZavri }) {
               <div className="pridatPolozku">
                 <input value={novaPolozka} onChange={(e) => setNovaPolozka(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); pridejPolozku(); } }}
-                  placeholder="Např. ceny kamene" />
+                  placeholder="Např. kvalifikace" />
                 <button type="button" className="druhotny" onClick={pridejPolozku}>Přidat</button>
               </div>
             </div>
@@ -1021,7 +1032,7 @@ function Kalendar({ zaznamy, onEdit }) {
     const m = {};
     zaznamy.forEach((z) => lhutyZe(z, true).forEach((l) => {
       if (skrytSplnene && l.splneno) return;
-      (m[l.datum] = m[l.datum] || []).push({ z, jistota: l.klic.endsWith(":jistota"), splneno: l.splneno });
+      (m[l.datum] = m[l.datum] || []).push({ z, nadpis: l.nadpis, splneno: l.splneno });
     }));
     return m;
   }, [zaznamy, skrytSplnene]);
@@ -1056,8 +1067,8 @@ function Kalendar({ zaznamy, onEdit }) {
               <div key={i} className={"kalBunka" + (iso === dnesIso ? " dnes" : "")}>
                 <div className="kalDen">{den}</div>
                 {ev.slice(0, 4).map((e, j) => (
-                  <button key={j} className={"kalUdalost" + prioTrida(e.z.priorita) + (e.splneno ? " splneno" : "")} onClick={() => onEdit(e.z)} title={e.z.nazev}>
-                    {e.splneno ? "✓ " : ""}{e.jistota ? "Jistota: " : ""}{e.z.nazev}
+                  <button key={j} className={"kalUdalost" + prioTrida(e.z.priorita) + (e.splneno ? " splneno" : "")} onClick={() => onEdit(e.z)} title={e.nadpis}>
+                    {e.splneno ? "✓ " : ""}{e.nadpis}
                   </button>
                 ))}
                 {ev.length > 4 && <div className="kalVic">+{ev.length - 4} dalších</div>}
